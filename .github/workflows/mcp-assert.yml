@@ -1,0 +1,22 @@
+name: mcp-assert
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  assert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build --if-present
+      - uses: blackwell-systems/mcp-assert-action@v1
+        with:
+          suite: evals/
