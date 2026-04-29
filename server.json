@@ -1,0 +1,64 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.wyre-technology/ninjaone-mcp",
+  "title": "NinjaOne",
+  "description": "MCP server for NinjaOne RMM — devices, organizations, alerts, and tickets.",
+  "repository": {
+    "url": "https://github.com/wyre-technology/ninjaone-mcp",
+    "source": "github"
+  },
+  "version": "0.0.0",
+  "websiteUrl": "https://github.com/wyre-technology/ninjaone-mcp",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/wyre-technology/ninjaone-mcp:0.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "NINJAONE_CLIENT_ID",
+          "description": "NinjaOne OAuth 2.0 Client ID",
+          "isRequired": true,
+          "format": "string"
+        },
+        {
+          "name": "NINJAONE_CLIENT_SECRET",
+          "description": "NinjaOne OAuth 2.0 Client Secret",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "NINJAONE_REGION",
+          "description": "NinjaOne region: 'us' (default), 'eu', or 'oc'",
+          "isRequired": false,
+          "default": "us",
+          "format": "string"
+        },
+        {
+          "name": "MCP_TRANSPORT",
+          "description": "Transport mode for the server. Set to 'stdio' for local CLI use; the image defaults to 'http' for gateway hosting.",
+          "isRequired": false,
+          "default": "stdio",
+          "format": "string"
+        },
+        {
+          "name": "AUTH_MODE",
+          "description": "Credential source: 'env' reads vars locally, 'gateway' expects header injection from the WYRE MCP Gateway.",
+          "isRequired": false,
+          "default": "env",
+          "format": "string"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "description": "Log verbosity: debug, info, warn, error",
+          "isRequired": false,
+          "default": "info",
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
