@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 /**
- * NinjaOne MCP Server with Decision Tree Architecture
+ * NinjaOne MCP Server with Flat Tool Architecture
  *
- * This MCP server uses a hierarchical tool loading approach:
- * 1. Initially exposes only a navigation tool
- * 2. After user selects a domain, exposes domain-specific tools
- * 3. Lazy-loads domain handlers and the NinjaOne client
+ * This MCP server exposes all NinjaOne tools upfront for universal MCP client
+ * compatibility. All tools are available immediately without navigation state.
+ * The ninjaone_navigate tool provides domain discovery and guidance but is not
+ * required to access domain tools.
+ *
+ * This flattened approach works with all MCP clients including remote connectors
+ * (claude.ai, mcp-remote) that do not support dynamic tool-list changes.
  *
  * Supports both stdio and HTTP transports:
  * - stdio (default): For local Claude Desktop / CLI usage
@@ -32,7 +35,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { getDomainHandler, getAvailableDomains } from "./domains/index.js";
-import { isDomainName, isValidRegion, getBaseUrlForRegion, type DomainName } from "./utils/types.js";
+import { isDomainName, isValidRegion, getBaseUrlForRegion } from "./utils/types.js";
 import {
   getCredentials,
   createClientDirect,
@@ -47,18 +50,57 @@ import { setServerRef } from "./utils/server-ref.js";
 import { registerPromptHandlers } from "./prompts.js";
 
 /**
- * Navigation tool - always available
+ * Collect all domain tools at startup for flattened tool listing
+ */
+async function getAllDomainTools(): Promise<Tool[]> {
+  const allTools: Tool[] = [];
+  const domains = getAvailableDomains();
+
+  for (const domain of domains) {
+    const handler = await getDomainHandler(domain);
+    const domainTools = handler.getTools();
+    allTools.push(...domainTools);
+  }
+
+  return allTools;
+}
+
+/**
+ * Available domains for navigation
+ */
+type DomainName = "devices" | "organizations" | "alerts" | "tickets";
+
+/**
+ * Domain metadata for discovery
+ */
+const domainDescriptions: Record<DomainName, string> = {
+  devices: "Device management - manage endpoints, reboot systems, view services, and get device alerts/activities",
+  organizations: "Organization management - manage customer accounts, locations, and view organization devices",
+  alerts: "Alert management - view, reset, and summarize monitoring alerts across devices and organizations",
+  tickets: "Ticket management - create, update, comment on, and track service tickets",
+};
+
+/**
+ * Navigation/discovery tool - helps find relevant tools by domain
+ *
+ * This is a stateless helper that describes available tools for a domain.
+ * All domain tools are always callable - this is a discovery aid, not a prerequisite.
  */
 const navigateTool: Tool = {
   name: "ninjaone_navigate",
   description:
-    "Navigate to a NinjaOne domain to access its tools. Available domains: devices (manage endpoints), organizations (manage customers), alerts (view and reset alerts), tickets (manage service tickets).",
+    "Discover available NinjaOne tools by domain. Returns tool names and descriptions for the selected domain. All tools are callable at any time — this is a help/discovery aid, not a prerequisite.",
   inputSchema: {
     type: "object",
     properties: {
       domain: {
         type: "string",
         enum: getAvailableDomains(),
+        description: `The domain to explore:
+- devices: ${domainDescriptions.devices}
+- organizations: ${domainDescriptions.organizations}
+- alerts: ${domainDescriptions.alerts}
+- tickets: ${domainDescriptions.tickets}`,
       },
     },
     required: ["domain"],
@@ -66,24 +108,12 @@ const navigateTool: Tool = {
 };
 
 /**
- * Back navigation tool - available when in a domain
- */
-const backTool: Tool = {
-  name: "ninjaone_back",
-  description: "Navigate back to the main menu",
-  inputSchema: {
-    type: "object",
-    properties: {},
-  },
-};
-
-/**
- * Status tool - shows current navigation state
+ * Status tool - shows API credential status and available tools
  */
 const statusTool: Tool = {
   name: "ninjaone_status",
   description:
-    "Show current navigation state, available domains, and API credential status",
+    "Show API credential status and available tool domains",
   inputSchema: {
     type: "object",
     properties: {},
@@ -98,8 +128,9 @@ const statusTool: Tool = {
  *   When provided, a per-request client is created from these credentials
  *   instead of reading from process.env.
  */
-function createMcpServer(credentialOverrides?: NinjaOneCredentials): Server {
-  let currentDomain: DomainName | null = null;
+async function createMcpServer(credentialOverrides?: NinjaOneCredentials): Promise<Server> {
+  // Collect all domain tools once at startup for flattened tool listing
+  const allDomainTools = await getAllDomainTools();
 
   const server = new Server(
     {
@@ -116,26 +147,16 @@ function createMcpServer(credentialOverrides?: NinjaOneCredentials): Server {
   setServerRef(server);
   registerPromptHandlers(server);
 
-  async function getToolsForState(): Promise<Tool[]> {
-    const tools: Tool[] = [statusTool];
-
-    if (currentDomain === null) {
-      tools.unshift(navigateTool);
-    } else {
-      tools.unshift(backTool);
-      const handler = await getDomainHandler(currentDomain);
-      const domainTools = handler.getTools();
-      tools.push(...domainTools);
-    }
-
-    return tools;
-  }
-
+  /**
+   * Handle ListTools requests - always returns ALL tools
+   */
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const tools = await getToolsForState();
-    return { tools };
+    return { tools: [navigateTool, statusTool, ...allDomainTools] };
   });
 
+  /**
+   * Handle CallTool requests
+   */
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     logger.info("Tool call received", { tool: name, arguments: args });
@@ -149,6 +170,7 @@ function createMcpServer(credentialOverrides?: NinjaOneCredentials): Server {
     }
 
     try {
+      // Handle navigation / discovery helper (stateless)
       if (name === "ninjaone_navigate") {
         const domain = (args as { domain: string }).domain;
 
@@ -164,52 +186,24 @@ function createMcpServer(credentialOverrides?: NinjaOneCredentials): Server {
           };
         }
 
-        const creds = getCredentials();
-        if (!creds) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Error: No API credentials configured. Please set NINJAONE_CLIENT_ID, NINJAONE_CLIENT_SECRET, and optionally NINJAONE_REGION environment variables.",
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        currentDomain = domain;
-
         const handler = await getDomainHandler(domain);
         const domainTools = handler.getTools();
 
-        logger.info("Navigated to domain", { domain, toolCount: domainTools.length });
+        const toolSummary = domainTools
+          .map((t) => `- ${t.name}: ${t.description}`)
+          .join("\n");
 
         return {
           content: [
             {
               type: "text",
-              text: `Navigated to ${domain} domain.\n\nAvailable tools:\n${domainTools
-                .map((t) => `- ${t.name}: ${t.description}`)
-                .join("\n")}\n\nUse ninjaone_back to return to the main menu.`,
+              text: `${domainDescriptions[domain]}\n\nAvailable tools:\n${toolSummary}\n\nYou can call any of these tools directly.`,
             },
           ],
         };
       }
 
-      if (name === "ninjaone_back") {
-        const previousDomain = currentDomain;
-        currentDomain = null;
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Navigated back from ${previousDomain || "root"} to the main menu.\n\nAvailable domains: ${getAvailableDomains().join(", ")}\n\nUse ninjaone_navigate to select a domain.`,
-            },
-          ],
-        };
-      }
-
+      // Handle status tool
       if (name === "ninjaone_status") {
         const creds = getCredentials();
         const credStatus = creds
@@ -220,34 +214,38 @@ function createMcpServer(credentialOverrides?: NinjaOneCredentials): Server {
           content: [
             {
               type: "text",
-              text: `NinjaOne MCP Server Status\n\nCurrent domain: ${currentDomain || "(none - at main menu)"}\nCredentials: ${credStatus}\nAvailable domains: ${getAvailableDomains().join(", ")}`,
+              text: `NinjaOne MCP Server Status\n\nCredentials: ${credStatus}\nAvailable domains: ${getAvailableDomains().join(", ")}\n\nAll tools are available. Use ninjaone_navigate to discover tools by domain.`,
             },
           ],
         };
       }
 
-      if (currentDomain !== null) {
-        const handler = await getDomainHandler(currentDomain);
-        const domainTools = handler.getTools();
-        const toolExists = domainTools.some((t) => t.name === name);
+      // Route to appropriate domain handler based on tool name prefix
+      const toolArgs = (args ?? {}) as Record<string, unknown>;
 
-        if (toolExists) {
-          const result = await handler.handleCall(name, args as Record<string, unknown>);
-          logger.debug("Tool call completed", {
-            tool: name,
-            responseSize: JSON.stringify(result).length,
-          });
-          return result;
-        }
+      if (name.startsWith("ninjaone_devices_")) {
+        const handler = await getDomainHandler("devices");
+        return await handler.handleCall(name, toolArgs);
+      }
+      if (name.startsWith("ninjaone_organizations_")) {
+        const handler = await getDomainHandler("organizations");
+        return await handler.handleCall(name, toolArgs);
+      }
+      if (name.startsWith("ninjaone_alerts_")) {
+        const handler = await getDomainHandler("alerts");
+        return await handler.handleCall(name, toolArgs);
+      }
+      if (name.startsWith("ninjaone_tickets_")) {
+        const handler = await getDomainHandler("tickets");
+        return await handler.handleCall(name, toolArgs);
       }
 
+      // Unknown tool
       return {
         content: [
           {
             type: "text",
-            text: currentDomain
-              ? `Unknown tool: ${name}. You are currently in the ${currentDomain} domain. Use ninjaone_back to return to the main menu.`
-              : `Unknown tool: ${name}. Use ninjaone_navigate to select a domain first.`,
+            text: `Unknown tool: ${name}. Use ninjaone_navigate to discover available tools by domain.`,
           },
         ],
         isError: true,
@@ -275,10 +273,10 @@ function createMcpServer(credentialOverrides?: NinjaOneCredentials): Server {
  * Start the server with stdio transport (default)
  */
 async function startStdioTransport(): Promise<void> {
-  const server = createMcpServer();
+  const server = await createMcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  logger.info("NinjaOne MCP server running on stdio (decision tree mode)");
+  logger.info("NinjaOne MCP server running on stdio (flattened mode)");
 }
 
 /**
@@ -290,7 +288,7 @@ async function startHttpTransport(): Promise<void> {
   const host = process.env.MCP_HTTP_HOST || "0.0.0.0";
   const isGatewayMode = process.env.AUTH_MODE === "gateway";
 
-  const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+  const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
     // Health endpoint - no auth required
@@ -355,7 +353,7 @@ async function startHttpTransport(): Promise<void> {
       }
 
       // Create fresh server + transport per request (stateless)
-      const server = createMcpServer(credOverrides);
+      const server = await createMcpServer(credOverrides);
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
@@ -366,9 +364,8 @@ async function startHttpTransport(): Promise<void> {
         server.close();
       });
 
-      server.connect(transport).then(() => {
-        transport.handleRequest(req, res);
-      });
+      await server.connect(transport);
+      transport.handleRequest(req, res);
       return;
     }
 
