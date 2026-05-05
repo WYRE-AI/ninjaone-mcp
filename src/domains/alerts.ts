@@ -19,34 +19,29 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_alerts_list",
       description:
-        "List active alerts in NinjaOne. Can filter by severity, organization, or device.",
+        "List active alerts, filterable by severity, organization, or device",
       inputSchema: {
         type: "object" as const,
         properties: {
           severity: {
             type: "string",
             enum: ["CRITICAL", "MAJOR", "MINOR", "NONE"],
-            description: "Filter by alert severity",
           },
           organization_id: {
             type: "number",
-            description: "Filter alerts by organization ID",
           },
           device_id: {
             type: "number",
-            description: "Filter alerts by device ID",
           },
           source_type: {
             type: "string",
-            description: "Filter by alert source type (e.g., CONDITION, ACTIVITY)",
+            description: "e.g., CONDITION, ACTIVITY",
           },
           limit: {
             type: "number",
-            description: "Maximum number of results (default: 50)",
           },
           cursor: {
             type: "string",
-            description: "Pagination cursor for next page of results",
           },
         },
       },
@@ -54,13 +49,12 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_alerts_reset",
       description:
-        "Reset (dismiss) an alert. This acknowledges the alert and marks it as handled.",
+        "Reset (dismiss) an alert - acknowledges and marks as handled",
       inputSchema: {
         type: "object" as const,
         properties: {
           alert_uid: {
             type: "string",
-            description: "The unique identifier of the alert to reset",
           },
         },
         required: ["alert_uid"],
@@ -69,22 +63,19 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_alerts_reset_all",
       description:
-        "Reset (dismiss) all alerts for a device or organization. Use with caution.",
+        "Reset all alerts for a device or organization (destructive action)",
       inputSchema: {
         type: "object" as const,
         properties: {
           device_id: {
             type: "number",
-            description: "Reset all alerts for this device ID",
           },
           organization_id: {
             type: "number",
-            description: "Reset all alerts for this organization ID",
           },
           severity: {
             type: "string",
             enum: ["CRITICAL", "MAJOR", "MINOR", "NONE"],
-            description: "Only reset alerts of this severity",
           },
         },
       },
@@ -92,14 +83,13 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_alerts_summary",
       description:
-        "Get a summary count of alerts grouped by severity and/or organization",
+        "Get alert count summary grouped by severity and/or organization",
       inputSchema: {
         type: "object" as const,
         properties: {
           group_by: {
             type: "string",
             enum: ["severity", "organization", "both"],
-            description: "How to group the alert counts (default: severity)",
           },
         },
       },

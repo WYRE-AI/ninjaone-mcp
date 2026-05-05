@@ -18,43 +18,37 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_devices_list",
       description:
-        "List devices in NinjaOne. Can filter by organization, device class, or online status.",
+        "List NinjaOne devices, filterable by organization, device class, or online status",
       inputSchema: {
         type: "object" as const,
         properties: {
           organization_id: {
             type: "number",
-            description: "Filter devices by organization ID",
           },
           device_class: {
             type: "string",
             enum: ["WINDOWS_WORKSTATION", "WINDOWS_SERVER", "MAC", "LINUX", "VMWARE_VM"],
-            description: "Filter by device class",
           },
           online: {
             type: "boolean",
-            description: "Filter by online status (true for online, false for offline)",
           },
           limit: {
             type: "number",
-            description: "Maximum number of results (default: 50)",
           },
           cursor: {
             type: "string",
-            description: "Pagination cursor for next page of results",
           },
         },
       },
     },
     {
       name: "ninjaone_devices_get",
-      description: "Get details for a specific device by its ID",
+      description: "Get device details by ID",
       inputSchema: {
         type: "object" as const,
         properties: {
           device_id: {
             type: "number",
-            description: "The device ID",
           },
         },
         required: ["device_id"],
@@ -62,17 +56,15 @@ function getTools(): Tool[] {
     },
     {
       name: "ninjaone_devices_reboot",
-      description: "Schedule a reboot for a device",
+      description: "Schedule device reboot (destructive action)",
       inputSchema: {
         type: "object" as const,
         properties: {
           device_id: {
             type: "number",
-            description: "The device ID to reboot",
           },
           reason: {
             type: "string",
-            description: "Reason for the reboot",
           },
         },
         required: ["device_id"],
@@ -86,12 +78,10 @@ function getTools(): Tool[] {
         properties: {
           device_id: {
             type: "number",
-            description: "The device ID",
           },
           state: {
             type: "string",
             enum: ["RUNNING", "STOPPED", "PAUSED"],
-            description: "Filter by service state",
           },
         },
         required: ["device_id"],
@@ -99,18 +89,16 @@ function getTools(): Tool[] {
     },
     {
       name: "ninjaone_devices_alerts",
-      description: "Get active alerts for a specific device",
+      description: "Get active alerts for a device",
       inputSchema: {
         type: "object" as const,
         properties: {
           device_id: {
             type: "number",
-            description: "The device ID",
           },
           severity: {
             type: "string",
             enum: ["CRITICAL", "MAJOR", "MINOR", "NONE"],
-            description: "Filter by alert severity",
           },
         },
         required: ["device_id"],
@@ -118,21 +106,18 @@ function getTools(): Tool[] {
     },
     {
       name: "ninjaone_devices_activities",
-      description: "Get activity log for a device",
+      description: "Get device activity log",
       inputSchema: {
         type: "object" as const,
         properties: {
           device_id: {
             type: "number",
-            description: "The device ID",
           },
           activity_type: {
             type: "string",
-            description: "Filter by activity type",
           },
           limit: {
             type: "number",
-            description: "Maximum number of results (default: 50)",
           },
         },
         required: ["device_id"],

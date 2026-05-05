@@ -17,30 +17,27 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_organizations_list",
       description:
-        "List organizations in NinjaOne. Organizations represent customer accounts.",
+        "List organizations (customer accounts)",
       inputSchema: {
         type: "object" as const,
         properties: {
           limit: {
             type: "number",
-            description: "Maximum number of results (default: 50)",
           },
           cursor: {
             type: "string",
-            description: "Pagination cursor for next page of results",
           },
         },
       },
     },
     {
       name: "ninjaone_organizations_get",
-      description: "Get details for a specific organization by its ID",
+      description: "Get organization details by ID",
       inputSchema: {
         type: "object" as const,
         properties: {
           organization_id: {
             type: "number",
-            description: "The organization ID",
           },
         },
         required: ["organization_id"],
@@ -48,17 +45,15 @@ function getTools(): Tool[] {
     },
     {
       name: "ninjaone_organizations_create",
-      description: "Create a new organization in NinjaOne",
+      description: "Create new organization",
       inputSchema: {
         type: "object" as const,
         properties: {
           name: {
             type: "string",
-            description: "Organization name",
           },
           description: {
             type: "string",
-            description: "Organization description",
           },
           node_approval_mode: {
             type: "string",
@@ -67,7 +62,6 @@ function getTools(): Tool[] {
           },
           policy_id: {
             type: "number",
-            description: "Default policy ID for devices",
           },
         },
         required: ["name"],
@@ -75,13 +69,12 @@ function getTools(): Tool[] {
     },
     {
       name: "ninjaone_organizations_locations",
-      description: "List locations for an organization",
+      description: "List organization locations",
       inputSchema: {
         type: "object" as const,
         properties: {
           organization_id: {
             type: "number",
-            description: "The organization ID",
           },
         },
         required: ["organization_id"],
@@ -89,22 +82,19 @@ function getTools(): Tool[] {
     },
     {
       name: "ninjaone_organizations_devices",
-      description: "List all devices for an organization",
+      description: "List organization devices",
       inputSchema: {
         type: "object" as const,
         properties: {
           organization_id: {
             type: "number",
-            description: "The organization ID",
           },
           device_class: {
             type: "string",
             enum: ["WINDOWS_WORKSTATION", "WINDOWS_SERVER", "MAC", "LINUX", "VMWARE_VM"],
-            description: "Filter by device class",
           },
           limit: {
             type: "number",
-            description: "Maximum number of results (default: 50)",
           },
         },
         required: ["organization_id"],

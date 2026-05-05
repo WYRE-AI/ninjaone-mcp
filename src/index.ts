@@ -59,8 +59,6 @@ const navigateTool: Tool = {
       domain: {
         type: "string",
         enum: getAvailableDomains(),
-        description:
-          "The domain to navigate to. Choose: devices, organizations, alerts, or tickets",
       },
     },
     required: ["domain"],
@@ -72,7 +70,7 @@ const navigateTool: Tool = {
  */
 const backTool: Tool = {
   name: "ninjaone_back",
-  description: "Navigate back to the main menu to select a different domain",
+  description: "Navigate back to the main menu",
   inputSchema: {
     type: "object",
     properties: {},
@@ -85,7 +83,7 @@ const backTool: Tool = {
 const statusTool: Tool = {
   name: "ninjaone_status",
   description:
-    "Show current navigation state and available domains. Also verifies API credentials are configured.",
+    "Show current navigation state, available domains, and API credential status",
   inputSchema: {
     type: "object",
     properties: {},
