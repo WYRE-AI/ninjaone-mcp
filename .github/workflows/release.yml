@@ -9,25 +9,12 @@ on:
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [20, 22]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-      - name: Configure npm for GitHub Packages
-        run: |
-          echo "@wyre-technology:registry=https://npm.pkg.github.com" >> .npmrc
-          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" >> .npmrc
-      - run: npm ci
-      - run: npm run lint
-        continue-on-error: true
-      - run: npm run build
-      - run: npm test
+    # Delegated to the canonical reusable CI workflow.
+    # See: ~/.claude/skills/mcp-server-fleet-ci-template
+    uses: wyre-technology/.github/.github/workflows/mcp-server-ci.yml@8f1da6a78d0cc0b8a330547bfc6892da3e72ae13
+    with:
+      node-versions: '["20", "22"]'
+    secrets: inherit
 
   release:
     name: Release
