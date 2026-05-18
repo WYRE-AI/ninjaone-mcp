@@ -4,12 +4,7 @@
  * Verifies that all tools are always available and navigation is stateless.
  */
 
-import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock environment for testing
 vi.mock("../utils/client.js", () => ({
@@ -194,6 +189,8 @@ describe("Flattened Navigation Architecture", () => {
 
       // Same domain should always return same tools regardless of load order
       expect(tools1.map(t => t.name)).toEqual(tools3.map(t => t.name));
+      // A different domain returns a different tool set
+      expect(tools2.map(t => t.name)).not.toEqual(tools1.map(t => t.name));
     });
   });
 });
