@@ -1,6 +1,6 @@
 {
   "name": "@wyre-technology/ninjaone-mcp",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "NinjaOne MCP server with decision tree architecture for Claude",
   "type": "module",
   "main": "dist/index.js",

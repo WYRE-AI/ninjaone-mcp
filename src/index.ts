@@ -291,29 +291,13 @@ async function startHttpTransport(): Promise<void> {
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
-    // Health endpoint - no auth required
-    if (url.pathname === "/health") {
-      const creds = getCredentials();
-      const status = creds ? "ok" : "degraded";
-      const statusCode = creds ? 200 : 503;
-
-      res.writeHead(statusCode, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          status,
-          transport: "http",
-          authMode: isGatewayMode ? "gateway" : "env",
-          timestamp: new Date().toISOString(),
-          credentials: {
-            configured: !!creds,
-            region: creds?.region ?? null,
-            hasClientId: !!process.env.NINJAONE_CLIENT_ID,
-            hasClientSecret: !!process.env.NINJAONE_CLIENT_SECRET,
-          },
-          logLevel: process.env.LOG_LEVEL || "info",
-          version: "1.0.0",
-        })
-      );
+    // Health endpoint - shallow, unauthenticated liveness probe.
+    // Must NOT call getCredentials() or any upstream: in gateway mode
+    // credentials only arrive per-request via headers, so a credential
+    // check here would always 503 and crash-loop the container.
+    if (url.pathname === "/health" || url.pathname === "/healthz") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "ok" }));
       return;
     }
 

@@ -1,3 +1,14 @@
+## [Unreleased]
+
+### Fixed
+
+- `GET /health` (and new `/healthz`) is now a shallow, unauthenticated liveness
+  probe that always returns `200 {"status":"ok"}`. It no longer calls
+  `getCredentials()`. In gateway mode (`AUTH_MODE=gateway`) credentials only
+  arrive per-request via headers, so the previous credential check made
+  `/health` always return `503`, failing the Azure Container Apps liveness
+  probe and crash-looping the container.
+
 ## [1.4.2](https://github.com/wyre-technology/ninjaone-mcp/compare/v1.4.1...v1.4.2) (2026-04-07)
 
 
