@@ -51,7 +51,7 @@
     "@semantic-release/github": "^11.0.0",
     "@types/node": "^20.11.0",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
-    "@typescript-eslint/parser": "^6.19.0",
+    "@typescript-eslint/parser": "^8.60.0",
     "eslint": "^8.56.0",
     "semantic-release": "^25.0.0",
     "typescript": "^5.3.3",
