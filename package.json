@@ -43,7 +43,7 @@
   "homepage": "https://github.com/wyre-technology/ninjaone-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.3",
-    "@wyre-technology/node-ninjaone": "^1.0.0"
+    "@wyre-technology/node-ninjaone": "^1.1.2"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
