@@ -12,6 +12,7 @@ const {
   mockTicketsUpdate,
   mockTicketsAddComment,
   mockTicketsGetComments,
+  mockTicketsListBoards,
   mockClient,
 } = vi.hoisted(() => {
   const mockTicketsList = vi.fn();
@@ -20,6 +21,7 @@ const {
   const mockTicketsUpdate = vi.fn();
   const mockTicketsAddComment = vi.fn();
   const mockTicketsGetComments = vi.fn();
+  const mockTicketsListBoards = vi.fn();
 
   const mockClient = {
     tickets: {
@@ -29,6 +31,7 @@ const {
       update: mockTicketsUpdate,
       addComment: mockTicketsAddComment,
       getComments: mockTicketsGetComments,
+      listBoards: mockTicketsListBoards,
     },
   };
 
@@ -39,6 +42,7 @@ const {
     mockTicketsUpdate,
     mockTicketsAddComment,
     mockTicketsGetComments,
+    mockTicketsListBoards,
     mockClient,
   };
 });
@@ -101,13 +105,17 @@ describe("Tickets Domain Handler", () => {
       { id: 1, body: "Comment 1" },
       { id: 2, body: "Comment 2" },
     ]);
+    mockTicketsListBoards.mockResolvedValue([
+      { id: 1, name: "All Tickets" },
+      { id: 2, name: "Service Desk" },
+    ]);
   });
 
   describe("getTools", () => {
     it("should return all ticket tools", () => {
       const tools = ticketsHandler.getTools();
 
-      expect(tools.length).toBe(6);
+      expect(tools.length).toBe(7);
 
       const toolNames = tools.map((t) => t.name);
       expect(toolNames).toContain("ninjaone_tickets_list");
@@ -116,6 +124,7 @@ describe("Tickets Domain Handler", () => {
       expect(toolNames).toContain("ninjaone_tickets_update");
       expect(toolNames).toContain("ninjaone_tickets_add_comment");
       expect(toolNames).toContain("ninjaone_tickets_comments");
+      expect(toolNames).toContain("ninjaone_tickets_boards_list");
     });
 
     it("ninjaone_tickets_get should require ticket_id", () => {
@@ -293,6 +302,19 @@ describe("Tickets Domain Handler", () => {
 
         const data = JSON.parse(result.content[0].text);
         expect(data).toHaveLength(2);
+      });
+    });
+
+    describe("ninjaone_tickets_boards_list", () => {
+      it("should list available boards", async () => {
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_boards_list", {});
+
+        expect(result.isError).toBeUndefined();
+        expect(mockTicketsListBoards).toHaveBeenCalledWith();
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data).toHaveLength(2);
+        expect(data[0]).toEqual({ id: 1, name: "All Tickets" });
       });
     });
 

@@ -153,6 +153,15 @@ function getTools(): Tool[] {
         required: ["ticket_id"],
       },
     },
+    {
+      name: "ninjaone_tickets_boards_list",
+      description:
+        "List available ticket boards for the tenant. Use this to discover board_id values for ninjaone_tickets_list.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {},
+      },
+    },
   ];
 }
 
@@ -265,6 +274,16 @@ async function handleCall(
 
       return {
         content: [{ type: "text", text: JSON.stringify(comments, null, 2) }],
+      };
+    }
+
+    case "ninjaone_tickets_boards_list": {
+      logger.info("API call: tickets.listBoards");
+      const boards = await client.tickets.listBoards();
+      logger.debug("API response: tickets.listBoards", { count: boards.length });
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(boards, null, 2) }],
       };
     }
 
