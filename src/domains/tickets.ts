@@ -184,6 +184,7 @@ async function handleCall(
         deviceId: args.device_id as number | undefined,
         boardId: args.board_id as number | undefined,
         pageSize: limit,
+        lastCursorId: cursor !== undefined ? Number(cursor) : undefined,
       });
       logger.debug("API response: tickets.list", { count: response.tickets?.length });
 

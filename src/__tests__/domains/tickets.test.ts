@@ -172,7 +172,20 @@ describe("Tickets Domain Handler", () => {
           deviceId: 10,
           boardId: undefined,
           pageSize: 25,
+          lastCursorId: undefined,
         });
+      });
+
+      it("should forward cursor as lastCursorId for pagination", async () => {
+        await ticketsHandler.handleCall("ninjaone_tickets_list", {
+          board_id: 2,
+          limit: 50,
+          cursor: "50",
+        });
+
+        expect(mockTicketsList).toHaveBeenCalledWith(
+          expect.objectContaining({ lastCursorId: 50, pageSize: 50, boardId: 2 })
+        );
       });
     });
 
