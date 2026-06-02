@@ -91,7 +91,11 @@ jobs:
     name: Docker
     runs-on: ubuntu-latest
     needs: [test, release]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Gate on an actual semantic-release. A non-release push to main would
+    # otherwise rebuild and re-push :latest tagged with the stale package.json
+    # version, clobbering the correctly-tagged :latest from the last real
+    # release. Skipping docker cascades to deploy/registry (skipped dependency).
+    if: needs.release.outputs.released == 'true'
     permissions:
       contents: read
       packages: write
