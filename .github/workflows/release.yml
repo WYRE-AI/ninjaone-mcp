@@ -99,6 +99,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      # The push digest is the only race-proof way to deploy this exact build.
+      # `:latest` is mutable and can resolve to a stale layer; the digest is
+      # bulletproof and is what the reusable deploy workflow pins on.
+      digest: ${{ steps.push.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -121,6 +126,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push
+        id: push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2
         with:
           context: .
@@ -171,28 +177,15 @@ jobs:
 
   deploy:
     name: Deploy to Azure Container Apps
-    runs-on: ubuntu-latest
-    needs: [docker]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: production
+    needs: [release, docker]
+    if: needs.release.outputs.released == 'true'
     permissions:
       id-token: write
       contents: read
-    steps:
-      - name: Azure login (OIDC)
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5  # v2.3.0
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Deploy to Azure Container Apps
-        run: |
-          SHORT_SHA="${GITHUB_SHA::7}"
-          IMAGE="ghcr.io/${{ github.repository }}:latest"
-          echo "Deploying $IMAGE to mcpgw-prod-ninjaone (revision tag sha-${SHORT_SHA}-${GITHUB_RUN_ID})"
-          az containerapp update \
-            --name mcpgw-prod-ninjaone \
-            --resource-group mcp-gateway-prod \
-            --image "$IMAGE" \
-            --set-env-vars "IMAGE_VERSION=sha-${SHORT_SHA}-${GITHUB_RUN_ID}"
+    uses: wyre-technology/.github/.github/workflows/mcp-server-deploy.yml@d6ace529b210900f460cb365529f2a552daedf7a
+    with:
+      vendor-slug: ninjaone
+      image-name: ghcr.io/wyre-technology/ninjaone-mcp
+      digest: ${{ needs.docker.outputs.digest }}
+      version: ${{ needs.release.outputs.version }}
+    secrets: inherit
