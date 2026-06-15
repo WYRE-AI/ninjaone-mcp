@@ -11,7 +11,7 @@ jobs:
     name: Test
     # Delegated to the canonical reusable CI workflow.
     # See: ~/.claude/skills/mcp-server-fleet-ci-template
-    uses: wyre-technology/.github/.github/workflows/mcp-server-ci.yml@8f1da6a78d0cc0b8a330547bfc6892da3e72ae13
+    uses: wyre-technology/.github/.github/workflows/mcp-server-ci.yml@198605d0575e27374cf9b67fba3aa8c7b91de2c0
     with:
       node-versions: '["20", "22"]'
     secrets: inherit
@@ -182,7 +182,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    uses: wyre-technology/.github/.github/workflows/mcp-server-deploy.yml@d6ace529b210900f460cb365529f2a552daedf7a
+    uses: wyre-technology/.github/.github/workflows/mcp-server-deploy.yml@198605d0575e27374cf9b67fba3aa8c7b91de2c0
     with:
       vendor-slug: ninjaone
       image-name: ghcr.io/wyre-technology/ninjaone-mcp
