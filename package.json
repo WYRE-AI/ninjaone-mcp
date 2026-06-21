@@ -54,7 +54,7 @@
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^11.0.0",
     "@types/node": "^20.11.0",
-    "eslint": "^9.39.4",
+    "eslint": "^10.5.0",
     "globals": "^17.6.0",
     "semantic-release": "^25.0.0",
     "typescript": "^5.3.3",
