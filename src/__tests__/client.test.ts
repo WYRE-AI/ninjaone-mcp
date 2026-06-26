@@ -7,7 +7,7 @@ import { getCredentials, getClient, clearClient } from "../utils/client.js";
 
 // Mock the node-ninjaone library
 vi.mock("@wyre-technology/node-ninjaone", () => ({
-  NinjaOneClient: vi.fn().mockImplementation((config) => ({
+  NinjaOneClient: vi.fn().mockImplementation(function (config) { return ({
     config,
     devices: {
       list: vi.fn(),
@@ -38,7 +38,7 @@ vi.mock("@wyre-technology/node-ninjaone", () => ({
       addComment: vi.fn(),
       getComments: vi.fn(),
     },
-  })),
+  }) }),
 }));
 
 describe("NinjaOne Client Utilities", () => {
