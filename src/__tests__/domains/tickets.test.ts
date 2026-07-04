@@ -127,6 +127,14 @@ describe("Tickets Domain Handler", () => {
       expect(toolNames).toContain("ninjaone_tickets_boards_list");
     });
 
+    it("ninjaone_tickets_list should require board_id", () => {
+      const tools = ticketsHandler.getTools();
+      const listTool = tools.find((t) => t.name === "ninjaone_tickets_list");
+
+      expect(listTool).toBeDefined();
+      expect(listTool?.inputSchema.required).toContain("board_id");
+    });
+
     it("ninjaone_tickets_get should require ticket_id", () => {
       const tools = ticketsHandler.getTools();
       const getTool = tools.find((t) => t.name === "ninjaone_tickets_get");
@@ -156,19 +164,34 @@ describe("Tickets Domain Handler", () => {
 
   describe("handleCall", () => {
     describe("ninjaone_tickets_list", () => {
-      it("should list tickets with default parameters", async () => {
-        const result = await ticketsHandler.handleCall("ninjaone_tickets_list", {});
+      it("should list tickets for an explicit board", async () => {
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_list", {
+          board_id: 2,
+        });
 
         expect(result.isError).toBeUndefined();
         expect(result.content[0].type).toBe("text");
+        expect(mockTicketsList).toHaveBeenCalledWith(
+          expect.objectContaining({ boardId: 2 })
+        );
 
         const data = JSON.parse(result.content[0].text);
         expect(data.tickets).toHaveLength(2);
         expect(data.cursor).toBe("next-page");
       });
 
+      it("should return an actionable error when board_id is omitted", async () => {
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_list", {});
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("board_id");
+        expect(result.content[0].text).toContain("ninjaone_tickets_boards_list");
+        expect(mockTicketsList).not.toHaveBeenCalled();
+      });
+
       it("should pass filters to API", async () => {
         await ticketsHandler.handleCall("ninjaone_tickets_list", {
+          board_id: 1,
           status: "OPEN",
           organization_id: 5,
           device_id: 10,
@@ -179,7 +202,7 @@ describe("Tickets Domain Handler", () => {
           status: "OPEN",
           organizationId: 5,
           deviceId: 10,
-          boardId: undefined,
+          boardId: 1,
           pageSize: 25,
           lastCursorId: undefined,
         });
@@ -315,6 +338,20 @@ describe("Tickets Domain Handler", () => {
         const data = JSON.parse(result.content[0].text);
         expect(data).toHaveLength(2);
         expect(data[0]).toEqual({ id: 1, name: "All Tickets" });
+      });
+
+      it("should return actionable guidance when the boards endpoint 404s", async () => {
+        const notFound = Object.assign(new Error("Resource not found"), {
+          name: "NinjaOneNotFoundError",
+          status: 404,
+        });
+        mockTicketsListBoards.mockRejectedValueOnce(notFound);
+
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_boards_list", {});
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("404");
+        expect(result.content[0].text).toContain("web UI");
       });
     });
 

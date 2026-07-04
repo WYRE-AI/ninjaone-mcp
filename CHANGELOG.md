@@ -1,5 +1,18 @@
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `ninjaone_tickets_list` now requires `board_id` instead of
+  silently falling back to board 1 ([#54](https://github.com/wyre-technology/ninjaone-mcp/issues/54)).
+  Board IDs are tenant-specific — on multi-board tenants the old fallback could
+  return a near-empty queue (1 ticket instead of ~1,400 in the reported case)
+  with no indication anything was wrong. Omitting `board_id` now returns an
+  actionable error pointing at `ninjaone_tickets_boards_list`.
+- `ninjaone_tickets_boards_list` now returns actionable guidance when the
+  underlying endpoint (`GET /api/v2/ticketing/trigger/board`) responds 404,
+  which some tenants do — including how to find a board ID via the NinjaOne
+  web UI instead of a bare "Resource not found" error.
+
 ### Fixed
 
 - One-click deploys (Cloudflare Workers, DigitalOcean App Platform) no longer fail

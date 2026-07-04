@@ -18,10 +18,20 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_tickets_list",
       description:
-        "List tickets, filterable by status, organization, or device",
+        "List tickets from a ticket board, filterable by status, organization, or device. " +
+        "Requires board_id: NinjaOne queries tickets per board and board IDs vary by tenant " +
+        "(board 1 is NOT always the 'All Tickets' board). Discover board IDs with " +
+        "ninjaone_tickets_boards_list first.",
       inputSchema: {
         type: "object" as const,
         properties: {
+          board_id: {
+            type: "number",
+            description:
+              "Ticket board to query. Use ninjaone_tickets_boards_list to discover valid IDs; " +
+              "if that endpoint is unavailable on your tenant, read the ID from the board's URL " +
+              "in the NinjaOne web UI.",
+          },
           status: {
             type: "string",
             enum: ["OPEN", "IN_PROGRESS", "WAITING", "CLOSED"],
@@ -32,9 +42,6 @@ function getTools(): Tool[] {
           device_id: {
             type: "number",
           },
-          board_id: {
-            type: "number",
-          },
           limit: {
             type: "number",
           },
@@ -42,6 +49,7 @@ function getTools(): Tool[] {
             type: "string",
           },
         },
+        required: ["board_id"],
       },
     },
     {
@@ -176,6 +184,28 @@ async function handleCall(
 
   switch (toolName) {
     case "ninjaone_tickets_list": {
+      // Board IDs are tenant-specific; guessing one (the SDK used to default to
+      // board 1) silently returns the wrong board's tickets on multi-board
+      // tenants, so refuse to run without an explicit board_id.
+      const boardId = args.board_id;
+      if (typeof boardId !== "number" || !Number.isFinite(boardId)) {
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                "board_id is required: NinjaOne queries tickets per board, and board IDs " +
+                "vary by tenant — board 1 is not guaranteed to be the 'All Tickets' board, " +
+                "so guessing a default can silently return the wrong board's tickets. " +
+                "Call ninjaone_tickets_boards_list to discover board IDs; if that endpoint " +
+                "returns 404 on your tenant, read the ID from the board's URL in the " +
+                "NinjaOne web UI (e.g. the 'All tickets' sidebar link).",
+            },
+          ],
+          isError: true,
+        };
+      }
+
       const limit = (args.limit as number) || 50;
       const cursor = args.cursor as string | undefined;
       logger.info("API call: tickets.list", {
@@ -191,7 +221,7 @@ async function handleCall(
         status: args.status as TicketStatus | undefined,
         organizationId: args.organization_id as number | undefined,
         deviceId: args.device_id as number | undefined,
-        boardId: args.board_id as number | undefined,
+        boardId,
         pageSize: limit,
         lastCursorId: cursor !== undefined ? Number(cursor) : undefined,
       });
@@ -279,7 +309,31 @@ async function handleCall(
 
     case "ninjaone_tickets_boards_list": {
       logger.info("API call: tickets.listBoards");
-      const boards = await client.tickets.listBoards();
+      let boards: unknown[];
+      try {
+        boards = await client.tickets.listBoards();
+      } catch (error) {
+        // Some tenants 404 on GET /api/v2/ticketing/trigger/board, leaving no
+        // API path to discover board IDs — point the caller at the web UI
+        // instead of surfacing a bare "Resource not found".
+        const status = (error as { status?: number }).status;
+        if (status === 404) {
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  "The board listing endpoint (GET /api/v2/ticketing/trigger/board) returned " +
+                  "404 — some NinjaOne tenants do not expose it. To find a board_id for " +
+                  "ninjaone_tickets_list, open Ticketing in the NinjaOne web UI and read the " +
+                  "numeric ID from the board link's URL (e.g. the 'All tickets' sidebar link).",
+              },
+            ],
+            isError: true,
+          };
+        }
+        throw error;
+      }
       logger.debug("API response: tickets.listBoards", { count: boards.length });
 
       return {

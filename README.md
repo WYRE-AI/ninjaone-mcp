@@ -163,12 +163,20 @@ Tools:
 Manage service tickets.
 
 Tools:
-- `ninjaone_tickets_list` - List tickets with filters
+- `ninjaone_tickets_list` - List tickets from a board (requires `board_id`, see note below)
 - `ninjaone_tickets_get` - Get ticket details
 - `ninjaone_tickets_create` - Create a new ticket
 - `ninjaone_tickets_update` - Update an existing ticket
 - `ninjaone_tickets_add_comment` - Add a comment to a ticket
 - `ninjaone_tickets_comments` - Get ticket comments
+- `ninjaone_tickets_boards_list` - List ticket boards (to discover `board_id` values)
+
+> **Note:** NinjaOne queries tickets per board, and board IDs vary by tenant —
+> board 1 is *not* always the "All Tickets" board, so `ninjaone_tickets_list`
+> requires an explicit `board_id` rather than silently guessing one. Discover
+> IDs with `ninjaone_tickets_boards_list`; on tenants where that endpoint
+> returns 404, read the numeric ID from the board link's URL in the NinjaOne
+> web UI (e.g. the "All tickets" sidebar link).
 
 ## Navigation Tools
 
