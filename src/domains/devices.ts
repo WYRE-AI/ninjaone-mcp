@@ -12,6 +12,40 @@ import { logger } from "../utils/logger.js";
 import { elicitSelection } from "../utils/elicitation.js";
 
 /**
+ * Client-side device filter for the organization-scoped endpoint
+ * (GET /v2/organization/{id}/devices), which — unlike GET /v2/devices — accepts
+ * no `df` query, so class/online can't be filtered by the API there.
+ *
+ * Online-ness is read from the raw NinjaOne device (`offline` boolean), falling
+ * back to the SDK's `status` field. When it can't be determined, the device is
+ * treated as a match so an unexpected field shape degrades to "unfiltered"
+ * rather than silently dropping every device.
+ */
+function deviceMatchesFilters(
+  device: { nodeClass?: string; status?: string; offline?: boolean },
+  deviceClass: string | undefined,
+  online: boolean | undefined
+): boolean {
+  if (deviceClass !== undefined && device.nodeClass !== deviceClass) {
+    return false;
+  }
+  if (online !== undefined) {
+    const isOnline =
+      typeof device.offline === "boolean"
+        ? !device.offline
+        : device.status === "ONLINE"
+          ? true
+          : device.status === "OFFLINE"
+            ? false
+            : undefined;
+    if (isOnline !== undefined && isOnline !== online) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Get device domain tools
  */
 function getTools(): Tool[] {
@@ -190,6 +224,8 @@ async function handleCall(
             ? "ONLINE"
             : "OFFLINE";
 
+      const deviceClass = args.device_class as DeviceNodeClass | undefined;
+
       logger.info("API call: devices.list", {
         organizationId,
         deviceClass: args.device_class,
@@ -198,25 +234,54 @@ async function handleCall(
         cursor,
       });
 
-      const devices = await client.devices.list({
-        organizationId,
-        nodeClass: args.device_class as DeviceNodeClass | undefined,
-        status,
-        pageSize: limit,
-        cursor,
-      });
-      logger.debug("API response: devices.list", { deviceCount: devices.length });
+      // NinjaOne's GET /v2/devices compiles organizationId into a `df=org=<id>`
+      // device filter, but the API silently drops that filter often enough that it
+      // can't be relied on (issue #60) — when dropped it returns the entire fleet
+      // instead of erroring. The dedicated GET /v2/organization/{id}/devices
+      // endpoint scopes by org through the URL path, which the API can't ignore, so
+      // route through it whenever an organization is specified. That endpoint takes
+      // only pageSize + after (no `df`), so class/online are filtered client-side.
+      const after =
+        cursor !== undefined && Number.isFinite(Number(cursor))
+          ? Number(cursor)
+          : undefined;
+
+      const rawDevices =
+        organizationId !== undefined
+          ? await client.devices.listByOrganization(organizationId, {
+              pageSize: limit,
+              after,
+            })
+          : await client.devices.list({
+              nodeClass: deviceClass,
+              status,
+              pageSize: limit,
+              cursor,
+            });
+      logger.debug("API response: devices.list", { deviceCount: rawDevices.length });
 
       // GET /v2/devices has no total count and paginates by device id (the API's
       // `after` param returns ids greater than the cursor), so a page exactly the
       // size of the limit means results were likely truncated. Surface an explicit
       // hasMore flag and a cursor — the max id in this page, which the caller passes
-      // back as `cursor` to fetch the next page. Without this, truncation is silent
-      // and indistinguishable from "that's all of them".
-      const hasMore = devices.length === limit;
+      // back as `cursor` to fetch the next page. Compute this from the raw page
+      // (before any client-side filtering) so `hasMore` tracks the API's paging and
+      // not the filtered subset — otherwise a page that filters down to a handful of
+      // devices would look like the last page when it isn't.
+      const hasMore = rawDevices.length === limit;
       const nextCursor = hasMore
-        ? String(Math.max(...devices.map((d) => d.id)))
+        ? String(Math.max(...rawDevices.map((d) => d.id)))
         : undefined;
+
+      // The organization endpoint can't apply class/online server-side, so filter
+      // them here rather than silently ignore them. (On the no-org path the `df`
+      // query already applied them.)
+      const devices =
+        organizationId !== undefined
+          ? rawDevices.filter((d) =>
+              deviceMatchesFilters(d, deviceClass, args.online as boolean | undefined)
+            )
+          : rawDevices;
 
       return {
         content: [

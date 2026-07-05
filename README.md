@@ -163,7 +163,7 @@ Tools:
 Manage service tickets.
 
 Tools:
-- `ninjaone_tickets_list` - List tickets from a board (requires `board_id`, see note below)
+- `ninjaone_tickets_list` - List tickets from a board (requires `board_id`; `status`/`organization_id`/`device_id` filters are applied client-side, see notes below)
 - `ninjaone_tickets_get` - Get ticket details
 - `ninjaone_tickets_create` - Create a new ticket
 - `ninjaone_tickets_update` - Update an existing ticket
@@ -177,6 +177,20 @@ Tools:
 > IDs with `ninjaone_tickets_boards_list`; on tenants where that endpoint
 > returns 404, read the numeric ID from the board link's URL in the NinjaOne
 > web UI (e.g. the "All tickets" sidebar link).
+>
+> **Note:** NinjaOne's board-run API cannot filter tickets by status,
+> organization, or device server-side (attempting to throws a generic
+> `Bad request`). `ninjaone_tickets_list` therefore applies those filters
+> **client-side within one board page**. The response separates `count` (matches
+> in this page) from `scanned` (tickets examined) and includes `hasMore`/`cursor`
+> — page through until `hasMore` is `false` to get every match, and never treat a
+> single page's `count` as a board-wide total. Status is matched against each
+> ticket's status display name, so custom board statuses may not map to the
+> `OPEN`/`IN_PROGRESS`/`WAITING`/`CLOSED` values.
+>
+> Similarly, `ninjaone_devices_list` filters by `organization_id` through
+> NinjaOne's dedicated per-organization endpoint (the general `df=org` device
+> filter is unreliable and can silently return the full fleet).
 
 ## Navigation Tools
 

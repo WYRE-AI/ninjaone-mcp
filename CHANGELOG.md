@@ -15,6 +15,28 @@
 
 ### Fixed
 
+- `ninjaone_tickets_list` no longer throws a generic `Bad request` when a
+  `status`, `organization_id`, or `device_id` filter is supplied
+  ([#61](https://github.com/wyre-technology/ninjaone-mcp/issues/61),
+  [#60](https://github.com/wyre-technology/ninjaone-mcp/issues/60)). NinjaOne's
+  board-run endpoint cannot filter tickets by those fields server-side (the SDK
+  sent a filter body the API rejects, and the 400 was indistinguishable from an
+  auth failure — a silent-failure that reported *zero* open tickets across live
+  client accounts). The handler now fetches the board page **without** those
+  filters and matches them client-side (status against each ticket's status
+  display name, organization against `clientId`, device against `nodeId`). The
+  response separates `count` (matches in this page) from `scanned` and includes
+  `hasMore`/`cursor`, so a single page's matches can never be mistaken for a
+  board-wide total.
+- `ninjaone_devices_list` now filters by `organization_id` reliably
+  ([#60](https://github.com/wyre-technology/ninjaone-mcp/issues/60)). The general
+  `GET /v2/devices` device filter (`df=org=<id>`) is silently dropped by NinjaOne
+  often enough to be unusable — a dropped filter returned the entire fleet — so an
+  organization-scoped query now routes through the dedicated
+  `GET /v2/organization/{id}/devices` endpoint, which scopes by org through the
+  URL path and can't be ignored. `device_class`/`online` are applied client-side
+  on that path (it has no `df` support), and pagination (`hasMore`/`cursor`) is
+  preserved.
 - `ninjaone_devices_list` now forwards the `device_class` and `online` filters to
   the API — they were logged but never sent, so filtered calls silently returned
   the full unfiltered fleet ([#56](https://github.com/wyre-technology/ninjaone-mcp/issues/56)).

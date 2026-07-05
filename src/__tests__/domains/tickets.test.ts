@@ -189,7 +189,9 @@ describe("Tickets Domain Handler", () => {
         expect(mockTicketsList).not.toHaveBeenCalled();
       });
 
-      it("should pass filters to API", async () => {
+      it("should NOT send status/org/device filters to the board API (#60, #61)", async () => {
+        // NinjaOne's board-run endpoint 400s on these filters, so the handler must
+        // never forward them — it fetches the board page and filters client-side.
         await ticketsHandler.handleCall("ninjaone_tickets_list", {
           board_id: 1,
           status: "OPEN",
@@ -199,13 +201,93 @@ describe("Tickets Domain Handler", () => {
         });
 
         expect(mockTicketsList).toHaveBeenCalledWith({
-          status: "OPEN",
-          organizationId: 5,
-          deviceId: 10,
           boardId: 1,
           pageSize: 25,
           lastCursorId: undefined,
         });
+        const passed = mockTicketsList.mock.calls[0][0];
+        expect(passed).not.toHaveProperty("status");
+        expect(passed).not.toHaveProperty("organizationId");
+        expect(passed).not.toHaveProperty("deviceId");
+      });
+
+      it("should filter tickets by status client-side (board-row status object)", async () => {
+        mockTicketsList.mockResolvedValueOnce({
+          data: [
+            { id: 1, status: { statusId: 2000, displayName: "Open" }, clientId: 5, nodeId: 10 },
+            { id: 2, status: { statusId: 4000, displayName: "In Progress" }, clientId: 5, nodeId: 11 },
+            { id: 3, status: { statusId: 2000, displayName: "Open" }, clientId: 7, nodeId: 12 },
+          ],
+        });
+
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_list", {
+          board_id: 1,
+          status: "OPEN",
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.count).toBe(2);
+        expect(data.scanned).toBe(3);
+        expect(data.tickets.map((t: { id: number }) => t.id)).toEqual([1, 3]);
+        expect(data.note).toContain("client-side");
+      });
+
+      it("should match status enum against the display name (IN_PROGRESS → 'In Progress')", async () => {
+        mockTicketsList.mockResolvedValueOnce({
+          data: [
+            { id: 1, status: { statusId: 2000, displayName: "Open" } },
+            { id: 2, status: { statusId: 4000, displayName: "In Progress" } },
+          ],
+        });
+
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_list", {
+          board_id: 1,
+          status: "IN_PROGRESS",
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.tickets.map((t: { id: number }) => t.id)).toEqual([2]);
+      });
+
+      it("should filter by organization (clientId) and device (nodeId) client-side", async () => {
+        mockTicketsList.mockResolvedValueOnce({
+          data: [
+            { id: 1, status: { displayName: "Open" }, clientId: 5, nodeId: 10 },
+            { id: 2, status: { displayName: "Open" }, clientId: 5, nodeId: 99 },
+            { id: 3, status: { displayName: "Open" }, clientId: 7, nodeId: 10 },
+          ],
+        });
+
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_list", {
+          board_id: 1,
+          organization_id: 5,
+          device_id: 10,
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.tickets.map((t: { id: number }) => t.id)).toEqual([1]);
+      });
+
+      it("should flag hasMore and a cursor when the board page is full", async () => {
+        // A full page (length === limit) means the board has more tickets.
+        mockTicketsList.mockResolvedValueOnce({
+          data: [
+            { id: 10, status: { displayName: "Open" }, clientId: 5 },
+            { id: 20, status: { displayName: "Closed" }, clientId: 5 },
+          ],
+        });
+
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_list", {
+          board_id: 1,
+          status: "OPEN",
+          limit: 2,
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.count).toBe(1); // only the Open one matched...
+        expect(data.scanned).toBe(2); // ...out of 2 scanned
+        expect(data.hasMore).toBe(true); // full page → more tickets exist
+        expect(data.cursor).toBe("20"); // resume after the max row id
       });
 
       it("should forward cursor as lastCursorId for pagination", async () => {

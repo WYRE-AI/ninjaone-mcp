@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Create mock functions using vi.hoisted so they're available when vi.mock is hoisted
 const {
   mockDevicesList,
+  mockDevicesListByOrganization,
   mockDevicesGet,
   mockDevicesReboot,
   mockDevicesGetServices,
@@ -15,6 +16,7 @@ const {
   mockClient,
 } = vi.hoisted(() => {
   const mockDevicesList = vi.fn();
+  const mockDevicesListByOrganization = vi.fn();
   const mockDevicesGet = vi.fn();
   const mockDevicesReboot = vi.fn();
   const mockDevicesGetServices = vi.fn();
@@ -24,6 +26,7 @@ const {
   const mockClient = {
     devices: {
       list: mockDevicesList,
+      listByOrganization: mockDevicesListByOrganization,
       get: mockDevicesGet,
       reboot: mockDevicesReboot,
       getServices: mockDevicesGetServices,
@@ -36,6 +39,7 @@ const {
 
   return {
     mockDevicesList,
+    mockDevicesListByOrganization,
     mockDevicesGet,
     mockDevicesReboot,
     mockDevicesGetServices,
@@ -64,6 +68,7 @@ describe("Devices Domain Handler", () => {
   beforeEach(() => {
     // Clear call history
     mockDevicesList.mockClear();
+    mockDevicesListByOrganization.mockClear();
     mockDevicesGet.mockClear();
     mockDevicesReboot.mockClear();
     mockDevicesGetServices.mockClear();
@@ -74,6 +79,12 @@ describe("Devices Domain Handler", () => {
     mockDevicesList.mockResolvedValue([
       { id: 1, systemName: "Device 1", organizationId: 1 },
       { id: 2, systemName: "Device 2", organizationId: 1 },
+    ]);
+    // Organization-scoped endpoint returns that org's devices (raw NinjaOne
+    // shape: nodeClass + offline boolean, no ONLINE/OFFLINE status string).
+    mockDevicesListByOrganization.mockResolvedValue([
+      { id: 3, systemName: "Srv", organizationId: 5, nodeClass: "WINDOWS_SERVER", offline: false },
+      { id: 4, systemName: "Wks", organizationId: 5, nodeClass: "WINDOWS_WORKSTATION", offline: true },
     ]);
     mockDevicesGet.mockResolvedValue({
       id: 1,
@@ -142,26 +153,27 @@ describe("Devices Domain Handler", () => {
         expect(data.devices).toHaveLength(2);
       });
 
-      it("should forward class and online filters to the API", async () => {
+      it("should forward class and online filters to /v2/devices (df path, no org)", async () => {
         await devicesHandler.handleCall("ninjaone_devices_list", {
-          organization_id: 5,
           device_class: "WINDOWS_SERVER",
           online: true,
           limit: 10,
         });
 
+        // With no organization filter, class/online go server-side via the `df`
+        // query on GET /v2/devices. organizationId must NOT be passed here — the
+        // API silently drops `df=org`, which is the whole point of #60.
         expect(mockDevicesList).toHaveBeenCalledWith({
-          organizationId: 5,
           nodeClass: "WINDOWS_SERVER",
           status: "ONLINE",
           pageSize: 10,
           cursor: undefined,
         });
+        expect(mockDevicesListByOrganization).not.toHaveBeenCalled();
       });
 
       it("should map online:false to OFFLINE status", async () => {
         await devicesHandler.handleCall("ninjaone_devices_list", {
-          organization_id: 5,
           online: false,
         });
 
@@ -172,11 +184,57 @@ describe("Devices Domain Handler", () => {
 
       it("should omit the status filter when online is not provided", async () => {
         await devicesHandler.handleCall("ninjaone_devices_list", {
-          organization_id: 5,
+          device_class: "MAC",
         });
 
         const passed = mockDevicesList.mock.calls[0][0];
         expect(passed.status).toBeUndefined();
+      });
+
+      it("should route organization_id to the org-scoped endpoint (#60)", async () => {
+        // NinjaOne silently drops `df=org` on GET /v2/devices, leaking the whole
+        // fleet. The org must be scoped via the path-based endpoint instead.
+        const result = await devicesHandler.handleCall("ninjaone_devices_list", {
+          organization_id: 5,
+          limit: 10,
+        });
+
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(5, {
+          pageSize: 10,
+          after: undefined,
+        });
+        expect(mockDevicesList).not.toHaveBeenCalled();
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.count).toBe(2);
+        expect(data.devices.every((d: { organizationId: number }) => d.organizationId === 5)).toBe(true);
+      });
+
+      it("should filter class/online client-side on the org endpoint", async () => {
+        // The org endpoint has no `df`, so class/online can't be applied by the
+        // API — they must be filtered in code rather than silently ignored.
+        const result = await devicesHandler.handleCall("ninjaone_devices_list", {
+          organization_id: 5,
+          device_class: "WINDOWS_SERVER",
+          online: true,
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.count).toBe(1);
+        expect(data.devices[0].nodeClass).toBe("WINDOWS_SERVER");
+        expect(data.devices[0].offline).toBe(false);
+      });
+
+      it("should paginate the org endpoint via the after cursor", async () => {
+        await devicesHandler.handleCall("ninjaone_devices_list", {
+          organization_id: 5,
+          cursor: "99",
+        });
+
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(
+          5,
+          expect.objectContaining({ after: 99 })
+        );
       });
 
       it("should surface a pagination cursor when a full page is returned", async () => {
@@ -187,7 +245,7 @@ describe("Devices Domain Handler", () => {
         ]);
 
         const result = await devicesHandler.handleCall("ninjaone_devices_list", {
-          organization_id: 5,
+          device_class: "WINDOWS_SERVER",
           limit: 2,
         });
 
@@ -200,7 +258,7 @@ describe("Devices Domain Handler", () => {
       it("should not surface a cursor when the page is not full", async () => {
         // Default mock returns 2 devices; limit 50 → not a full page.
         const result = await devicesHandler.handleCall("ninjaone_devices_list", {
-          organization_id: 5,
+          device_class: "WINDOWS_SERVER",
           limit: 50,
         });
 
