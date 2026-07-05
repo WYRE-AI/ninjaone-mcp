@@ -15,6 +15,13 @@
 
 ### Fixed
 
+- `ninjaone_devices_list` now forwards the `device_class` and `online` filters to
+  the API — they were logged but never sent, so filtered calls silently returned
+  the full unfiltered fleet ([#56](https://github.com/wyre-technology/ninjaone-mcp/issues/56)).
+  The `device_class` enum is corrected to real NinjaOne node classes (`LINUX` and
+  `VMWARE_VM` were never valid). The response now includes `count`, an explicit
+  `hasMore` flag, and a `cursor` (the last device id) so the ~50-result page limit
+  is detectable and paginable instead of a silent truncation.
 - One-click deploys (Cloudflare Workers, DigitalOcean App Platform) no longer fail
   with `npm error 401 Unauthorized ... npm.pkg.github.com` ([#33](https://github.com/wyre-technology/ninjaone-mcp/issues/33)).
   `.npmrc` now carries an `_authToken=${NODE_AUTH_TOKEN}` line so the cloud builder

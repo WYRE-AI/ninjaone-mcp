@@ -5,6 +5,7 @@
  */
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { DeviceNodeClass } from "@wyre-technology/node-ninjaone";
 import type { DomainHandler, CallToolResult } from "../utils/types.js";
 import { getClient } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
@@ -27,16 +28,27 @@ function getTools(): Tool[] {
           },
           device_class: {
             type: "string",
-            enum: ["WINDOWS_WORKSTATION", "WINDOWS_SERVER", "MAC", "LINUX", "VMWARE_VM"],
+            enum: [
+              "WINDOWS_WORKSTATION",
+              "WINDOWS_SERVER",
+              "MAC",
+              "LINUX_WORKSTATION",
+              "LINUX_SERVER",
+              "VMWARE_VM_HOST",
+              "VMWARE_VM_GUEST",
+              "NMS",
+            ],
           },
           online: {
             type: "boolean",
           },
           limit: {
             type: "number",
+            description: "Max devices to return (default 50). A full page sets hasMore=true and returns a cursor.",
           },
           cursor: {
             type: "string",
+            description: "Pagination cursor from a previous response's cursor field (the last device id).",
           },
         },
       },
@@ -170,6 +182,14 @@ async function handleCall(
         }
       }
 
+      // Map the tool's online boolean onto the SDK's status filter.
+      const status =
+        args.online === undefined
+          ? undefined
+          : args.online
+            ? "ONLINE"
+            : "OFFLINE";
+
       logger.info("API call: devices.list", {
         organizationId,
         deviceClass: args.device_class,
@@ -180,16 +200,33 @@ async function handleCall(
 
       const devices = await client.devices.list({
         organizationId,
+        nodeClass: args.device_class as DeviceNodeClass | undefined,
+        status,
         pageSize: limit,
         cursor,
       });
       logger.debug("API response: devices.list", { deviceCount: devices.length });
 
+      // GET /v2/devices has no total count and paginates by device id (the API's
+      // `after` param returns ids greater than the cursor), so a page exactly the
+      // size of the limit means results were likely truncated. Surface an explicit
+      // hasMore flag and a cursor — the max id in this page, which the caller passes
+      // back as `cursor` to fetch the next page. Without this, truncation is silent
+      // and indistinguishable from "that's all of them".
+      const hasMore = devices.length === limit;
+      const nextCursor = hasMore
+        ? String(Math.max(...devices.map((d) => d.id)))
+        : undefined;
+
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify({ devices }, null, 2),
+            text: JSON.stringify(
+              { devices, count: devices.length, hasMore, cursor: nextCursor },
+              null,
+              2
+            ),
           },
         ],
       };

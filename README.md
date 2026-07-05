@@ -133,7 +133,7 @@ docker run -e NINJAONE_CLIENT_ID=xxx -e NINJAONE_CLIENT_SECRET=xxx -e NINJAONE_R
 Manage endpoints, reboot devices, view services and alerts.
 
 Tools:
-- `ninjaone_devices_list` - List devices with filters
+- `ninjaone_devices_list` - List devices, filterable by organization, device class, and online status. Paginated: a full page returns `hasMore: true` and a `cursor` to pass back for the next page.
 - `ninjaone_devices_get` - Get device details
 - `ninjaone_devices_reboot` - Schedule a device reboot
 - `ninjaone_devices_services` - List Windows services on a device

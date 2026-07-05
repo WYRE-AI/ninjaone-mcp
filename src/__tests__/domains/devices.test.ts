@@ -142,7 +142,7 @@ describe("Devices Domain Handler", () => {
         expect(data.devices).toHaveLength(2);
       });
 
-      it("should pass filters to API", async () => {
+      it("should forward class and online filters to the API", async () => {
         await devicesHandler.handleCall("ninjaone_devices_list", {
           organization_id: 5,
           device_class: "WINDOWS_SERVER",
@@ -152,9 +152,61 @@ describe("Devices Domain Handler", () => {
 
         expect(mockDevicesList).toHaveBeenCalledWith({
           organizationId: 5,
+          nodeClass: "WINDOWS_SERVER",
+          status: "ONLINE",
           pageSize: 10,
           cursor: undefined,
         });
+      });
+
+      it("should map online:false to OFFLINE status", async () => {
+        await devicesHandler.handleCall("ninjaone_devices_list", {
+          organization_id: 5,
+          online: false,
+        });
+
+        expect(mockDevicesList).toHaveBeenCalledWith(
+          expect.objectContaining({ status: "OFFLINE" })
+        );
+      });
+
+      it("should omit the status filter when online is not provided", async () => {
+        await devicesHandler.handleCall("ninjaone_devices_list", {
+          organization_id: 5,
+        });
+
+        const passed = mockDevicesList.mock.calls[0][0];
+        expect(passed.status).toBeUndefined();
+      });
+
+      it("should surface a pagination cursor when a full page is returned", async () => {
+        // A page exactly the size of the limit signals possible truncation.
+        mockDevicesList.mockResolvedValueOnce([
+          { id: 11, systemName: "A", organizationId: 1 },
+          { id: 22, systemName: "B", organizationId: 1 },
+        ]);
+
+        const result = await devicesHandler.handleCall("ninjaone_devices_list", {
+          organization_id: 5,
+          limit: 2,
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.count).toBe(2);
+        expect(data.hasMore).toBe(true);
+        expect(data.cursor).toBe("22");
+      });
+
+      it("should not surface a cursor when the page is not full", async () => {
+        // Default mock returns 2 devices; limit 50 → not a full page.
+        const result = await devicesHandler.handleCall("ninjaone_devices_list", {
+          organization_id: 5,
+          limit: 50,
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.hasMore).toBe(false);
+        expect(data.cursor).toBeUndefined();
       });
     });
 
