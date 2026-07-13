@@ -16,6 +16,13 @@ export interface NinjaOneCredentials {
   baseUrl: string;
 }
 
+/**
+ * Matches an unresolved MCPB/DXT config placeholder, e.g. "${user_config.ninjaone_region}".
+ * When an optional user_config field is left blank, Claude Desktop injects the literal
+ * placeholder string (not empty, not omitted) into the env var. Treat it as unset.
+ */
+const CONFIG_PLACEHOLDER = /^\$\{.*\}$/;
+
 let _client: NinjaOneClient | null = null;
 let _credentials: NinjaOneCredentials | null = null;
 
@@ -80,7 +87,6 @@ export function getCredentials(): NinjaOneCredentials | null {
 
   const clientId = process.env.NINJAONE_CLIENT_ID;
   const clientSecret = process.env.NINJAONE_CLIENT_SECRET;
-  const regionEnv = process.env.NINJAONE_REGION?.toLowerCase() || "us";
 
   if (!clientId || !clientSecret) {
     logger.warn("Missing credentials", {
@@ -90,12 +96,21 @@ export function getCredentials(): NinjaOneCredentials | null {
     return null;
   }
 
+  // Ignore a blank value or an unresolved MCPB config placeholder so an optional,
+  // left-blank region falls back to "us" — mirroring the gateway/worker paths that
+  // already do `isValidRegion(x) ? x : "us"` instead of failing hard.
+  const rawRegion = process.env.NINJAONE_REGION?.trim();
+  const regionEnv =
+    rawRegion && !CONFIG_PLACEHOLDER.test(rawRegion) ? rawRegion.toLowerCase() : "us";
+
   if (!isValidRegion(regionEnv)) {
-    logger.warn("Invalid region configured", { region: regionEnv, valid: ["us", "eu", "oc", "ca", "us2", "fed"] });
-    return null;
+    logger.warn("Invalid region configured, defaulting to us", {
+      region: regionEnv,
+      valid: ["us", "eu", "oc", "ca", "us2", "fed"],
+    });
   }
 
-  const region = regionEnv as NinjaOneRegion;
+  const region = isValidRegion(regionEnv) ? regionEnv : "us";
   const baseUrl = getBaseUrlForRegion(region);
 
   return { clientId, clientSecret, region, baseUrl };

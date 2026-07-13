@@ -15,6 +15,14 @@
 
 ### Fixed
 
+- An unresolved MCPB/DXT config placeholder in `NINJAONE_REGION` (e.g. the
+  literal `${user_config.ninjaone_region}` that Claude Desktop injects when the
+  optional region field is left blank) no longer makes `getCredentials()` return
+  `null` — which surfaced as "No API credentials provided" on **every** tool call
+  and misdirected users to their (correct) credentials. A blank, whitespace, or
+  placeholder region now falls back to `us`, aligning the stdio env path with the
+  already-graceful gateway-header and Worker paths (`isValidRegion(x) ? x : "us"`).
+  Mirrors itglue-mcp #73.
 - `ninjaone_tickets_list` no longer throws a generic `Bad request` when a
   `status`, `organization_id`, or `device_id` filter is supplied
   ([#61](https://github.com/wyre-technology/ninjaone-mcp/issues/61),
