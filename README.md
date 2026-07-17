@@ -155,9 +155,13 @@ View and manage alerts across all devices.
 
 Tools:
 - `ninjaone_alerts_list` - List alerts with filters
+- `ninjaone_alerts_get` - Get a single alert by UID (renders as an interactive card in MCP Apps hosts)
 - `ninjaone_alerts_reset` - Reset/dismiss a single alert
 - `ninjaone_alerts_reset_all` - Reset all alerts for a device or organization
 - `ninjaone_alerts_summary` - Get alert count summary
+
+Features:
+- **Interactive Alert Card (MCP Apps, SEP-1865)**: `ninjaone_alerts_get` renders as an interactive card in MCP Apps hosts (Claude Desktop/web) with an in-card "Reset alert" round-trip via `ninjaone_alerts_reset`; neutral by default, brandable via `window.__BRAND__` injection or `MCP_BRAND_*` env vars; plain-JSON behavior is unchanged in other hosts
 
 ### Tickets
 Manage service tickets.

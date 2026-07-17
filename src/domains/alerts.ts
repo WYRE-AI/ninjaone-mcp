@@ -6,10 +6,11 @@
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { DomainHandler, CallToolResult } from "../utils/types.js";
-import type { AlertSeverity, AlertSourceType } from "@wyre-technology/node-ninjaone";
+import type { Alert, AlertSeverity, AlertSourceType, NinjaOneClient } from "@wyre-technology/node-ninjaone";
 import { getClient } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
 import { elicitSelection } from "../utils/elicitation.js";
+import { ALERT_CARD_META, buildAlertCard, type AlertCardLabels } from "../alert-card.js";
 
 /**
  * Get alert domain tools
@@ -47,9 +48,27 @@ function getTools(): Tool[] {
       },
     },
     {
+      name: "ninjaone_alerts_get",
+      description:
+        "Get details for a specific alert by its UID",
+      // MCP Apps (SEP-1865): results render as an interactive card in hosts
+      // that support ui:// resources.
+      _meta: ALERT_CARD_META,
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          alert_uid: {
+            type: "string",
+          },
+        },
+        required: ["alert_uid"],
+      },
+    },
+    {
       name: "ninjaone_alerts_reset",
       description:
         "Reset (dismiss) an alert - acknowledges and marks as handled",
+      _meta: ALERT_CARD_META,
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -95,6 +114,36 @@ function getTools(): Tool[] {
       },
     },
   ];
+}
+
+/**
+ * Resolve human-readable device / organization labels for the alert card
+ * using lookups the server already exposes (devices.get, organizations.get).
+ * Best-effort: any failed lookup simply omits that label from the card.
+ */
+async function resolveCardLabels(
+  client: NinjaOneClient,
+  alert: Partial<Alert>
+): Promise<AlertCardLabels> {
+  const [device, organization] = await Promise.all([
+    typeof alert.deviceId === "number"
+      ? client.devices
+          .get(alert.deviceId)
+          .then((d) => d.displayName ?? d.system?.name ?? d.system?.dnsName)
+          .catch(() => undefined)
+      : Promise.resolve(undefined),
+    typeof alert.organizationId === "number"
+      ? client.organizations
+          .get(alert.organizationId)
+          .then((o) => o.name)
+          .catch(() => undefined)
+      : Promise.resolve(undefined),
+  ]);
+
+  const labels: AlertCardLabels = {};
+  if (device) labels.device = device;
+  if (organization) labels.organization = organization;
+  return labels;
 }
 
 /**
@@ -159,6 +208,28 @@ async function handleCall(
             text: JSON.stringify({ alerts }, null, 2),
           },
         ],
+      };
+    }
+
+    case "ninjaone_alerts_get": {
+      const alertUid = args.alert_uid as string;
+      logger.info("API call: alerts.get", { alertUid });
+      const alert = await client.alerts.get(alertUid);
+      logger.debug("API response: alerts.get", { alert });
+
+      // MCP Apps: attach the normalized payload the ui:// alert card renders
+      // from. Best-effort — an unresolved label is omitted, and a null card
+      // just means no UI surface; the alert JSON itself is never affected.
+      let payload: unknown = alert;
+      try {
+        const card = buildAlertCard(alert, await resolveCardLabels(client, alert));
+        if (card) payload = { ...alert, _card: card };
+      } catch {
+        /* card is progressive enhancement — serve the raw alert unchanged */
+      }
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
       };
     }
 

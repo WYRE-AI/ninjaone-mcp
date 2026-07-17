@@ -72,10 +72,11 @@ describe("Alerts Domain Handler", () => {
     it("should return all alert tools", () => {
       const tools = alertsHandler.getTools();
 
-      expect(tools.length).toBe(4);
+      expect(tools.length).toBe(5);
 
       const toolNames = tools.map((t) => t.name);
       expect(toolNames).toContain("ninjaone_alerts_list");
+      expect(toolNames).toContain("ninjaone_alerts_get");
       expect(toolNames).toContain("ninjaone_alerts_reset");
       expect(toolNames).toContain("ninjaone_alerts_reset_all");
       expect(toolNames).toContain("ninjaone_alerts_summary");

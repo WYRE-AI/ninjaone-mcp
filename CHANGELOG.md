@@ -1,5 +1,35 @@
 ## [Unreleased]
 
+### Added
+
+- **Interactive alert card via MCP Apps (SEP-1865).** A new `ninjaone_alerts_get`
+  tool fetches a single alert by UID, and its results render as an interactive
+  card in MCP Apps hosts (Claude Desktop/web, and other hosts advertising the
+  `io.modelcontextprotocol/ui` extension), instead of a wall of JSON. The card
+  shows the alert title (subject/source), severity, status, device and
+  organization (label-resolved server-side via the existing `devices.get` /
+  `organizations.get` lookups), source type, timestamp, and message — and
+  includes a working "Reset alert" round-trip that calls the existing
+  `ninjaone_alerts_reset` tool from inside the card. Non-App hosts are
+  unaffected: the tool's JSON payload is the raw alert plus a new `_card` field.
+  - The two renderable tools (`ninjaone_alerts_get`, `ninjaone_alerts_reset`)
+    advertise the UI via `_meta` (`ui/resourceUri`, plus the nested
+    `ui.resourceUri` form) pointing at a new `ui://ninjaone/alert-card.html`
+    resource served as `text/html;profile=mcp-app`. The server now declares the
+    `resources` capability and answers `resources/list` / `resources/read` for
+    the card.
+  - The card is **neutral by default** and brandable via `window.__BRAND__`
+    injection or `MCP_BRAND_*` environment variables (`MCP_BRAND_NAME`,
+    `MCP_BRAND_LOGO_URL`, `MCP_BRAND_PRIMARY_COLOR`, `MCP_BRAND_ACCENT_COLOR`,
+    `MCP_BRAND_BG`, `MCP_BRAND_TEXT`), applied at serve time by replacing the
+    card's `BRAND_INJECT` marker. No branding configured = the HTML is served
+    unchanged and the card renders with no brand identity.
+  - The card HTML is a self-contained vite single-file bundle embedded at build
+    time (`src/generated/alert-card-html.ts`, committed), so it serves
+    identically from stdio, Node HTTP, and the fs-less Cloudflare Workers
+    runtime. Rebuild with `npm run build:ui`; plain `npm run build` and CI do
+    not need vite.
+
 ### Changed
 
 - **Breaking:** `ninjaone_tickets_list` now requires `board_id` instead of

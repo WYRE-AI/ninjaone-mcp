@@ -13,7 +13,9 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
+  ListResourcesRequestSchema,
   ListToolsRequestSchema,
+  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { getDomainHandler, getAvailableDomains } from "./domains/index.js";
@@ -30,6 +32,13 @@ import {
 import { logger } from "./utils/logger.js";
 import { setServerRef } from "./utils/server-ref.js";
 import { registerPromptHandlers } from "./prompts.js";
+import {
+  ALERT_CARD_RESOURCE_URI,
+  MCP_APP_RESOURCE_MIME,
+  applyBrandInjection,
+  resolveBrandFromEnv,
+} from "./alert-card.js";
+import { ALERT_CARD_HTML } from "./generated/alert-card-html.js";
 
 export type { NinjaOneCredentials };
 
@@ -165,6 +174,7 @@ export async function createMcpServer(
       capabilities: {
         tools: {},
         prompts: {},
+        resources: {},
       },
     }
   );
@@ -173,6 +183,40 @@ export async function createMcpServer(
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return { tools: [navigateTool, statusTool, ...allDomainTools] };
+  });
+
+  // MCP Apps (SEP-1865): the ui:// alert card is static HTML embedded at
+  // build time (src/generated/alert-card-html.ts), so it serves identically
+  // from stdio, Node HTTP, and the fs-less Cloudflare Workers runtime.
+  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    return {
+      resources: [
+        {
+          uri: ALERT_CARD_RESOURCE_URI,
+          name: "NinjaOne Alert Card",
+          description: "Interactive MCP Apps card rendering a NinjaOne alert",
+          mimeType: MCP_APP_RESOURCE_MIME,
+        },
+      ],
+    };
+  });
+
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const { uri } = request.params;
+    if (uri !== ALERT_CARD_RESOURCE_URI) {
+      throw new Error(`Unknown resource: ${uri}`);
+    }
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: MCP_APP_RESOURCE_MIME,
+          // The card ships neutral; operators brand it at serve time via
+          // MCP_BRAND_* env vars (no vars = HTML served unchanged).
+          text: applyBrandInjection(ALERT_CARD_HTML, resolveBrandFromEnv()),
+        },
+      ],
+    };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
