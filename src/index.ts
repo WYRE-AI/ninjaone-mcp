@@ -24,8 +24,8 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import {
   createMcpServer,
   resolveGatewayCredentials,
@@ -89,7 +89,7 @@ async function startHttpTransport(): Promise<void> {
 
       // Create fresh server + transport per request (stateless)
       const server = await createMcpServer(credOverrides);
-      const transport = new StreamableHTTPServerTransport({
+      const transport = new NodeStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
       });

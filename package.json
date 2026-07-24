@@ -46,8 +46,9 @@
   },
   "homepage": "https://github.com/wyre-technology/ninjaone-mcp#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@wyre-technology/node-ninjaone": "^2.0.1"
+    "@wyre-technology/node-ninjaone": "^2.0.1",
+    "@modelcontextprotocol/node": "^2.0.0-beta.5",
+    "@modelcontextprotocol/server": "^2.0.0-beta.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

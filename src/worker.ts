@@ -20,8 +20,7 @@
  * `tools/list` and `initialize` work without credentials; only `tools/call`
  * requires them.
  */
-
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import {
   createMcpServer,
   resolveGatewayCredentials,

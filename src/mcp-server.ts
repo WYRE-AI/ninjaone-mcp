@@ -1,23 +1,5 @@
-/**
- * Shared MCP server factory for NinjaOne.
- *
- * This module is **side-effect free** (importing it never starts a transport),
- * so it can be reused by every entrypoint:
- * - `index.ts` — stdio + Node HTTP transport
- * - `worker.ts` — Cloudflare Workers (Web Standard) transport
- *
- * All NinjaOne tools are exposed upfront (flat architecture) for universal MCP
- * client compatibility.
- */
-
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  CallToolRequestSchema,
-  ListResourcesRequestSchema,
-  ListToolsRequestSchema,
-  ReadResourceRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { Server } from "@modelcontextprotocol/server";
+import type { Tool } from "@modelcontextprotocol/server";
 import { getDomainHandler, getAvailableDomains } from "./domains/index.js";
 import { isDomainName, isValidRegion, getBaseUrlForRegion } from "./utils/types.js";
 import {
@@ -181,14 +163,14 @@ export async function createMcpServer(
   setServerRef(server);
   registerPromptHandlers(server);
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
+  server.setRequestHandler('tools/list', async () => {
     return { tools: [navigateTool, statusTool, ...allDomainTools] };
   });
 
   // MCP Apps (SEP-1865): the ui:// alert card is static HTML embedded at
   // build time (src/generated/alert-card-html.ts), so it serves identically
   // from stdio, Node HTTP, and the fs-less Cloudflare Workers runtime.
-  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  server.setRequestHandler('resources/list', async () => {
     return {
       resources: [
         {
@@ -201,7 +183,7 @@ export async function createMcpServer(
     };
   });
 
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  server.setRequestHandler('resources/read', async (request) => {
     const { uri } = request.params;
     if (uri !== ALERT_CARD_RESOURCE_URI) {
       throw new Error(`Unknown resource: ${uri}`);
@@ -219,7 +201,7 @@ export async function createMcpServer(
     };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler('tools/call', async (request) => {
     const { name, arguments: args } = request.params;
     logger.info("Tool call received", { tool: name, arguments: args });
 

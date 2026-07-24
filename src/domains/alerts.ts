@@ -3,8 +3,7 @@
  *
  * Provides tools for alert operations in NinjaOne.
  */
-
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { Tool } from "@modelcontextprotocol/server";
 import type { DomainHandler, CallToolResult } from "../utils/types.js";
 import type { Alert, AlertSeverity, AlertSourceType, NinjaOneClient } from "@wyre-technology/node-ninjaone";
 import { getClient } from "../utils/client.js";
