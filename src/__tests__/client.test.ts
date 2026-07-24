@@ -3,42 +3,31 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getCredentials, getClient, clearClient } from "../utils/client.js";
+import {
+  getCredentials,
+  getClient,
+  clearClient,
+  runWithCredentials,
+} from "../utils/client.js";
+import * as clientModule from "../utils/client.js";
+
+// The mock fn is created up front via vi.hoisted (not inline in the factory
+// below) and its implementation is (re-)applied in beforeEach rather than
+// baked into the factory call. client.ts imports the SDK statically now (see
+// the comment there), which means this module is evaluated once, up front,
+// before any test's beforeEach hooks run — with the project's mockReset:true
+// config, an implementation set only inside the vi.mock() factory gets wiped
+// by the automatic pre-test reset before the very first test ever sees it.
+// Re-applying it in beforeEach keeps it correct no matter how it interacts
+// with the auto-reset.
+const { NinjaOneClientMock, constructedConfigs } = vi.hoisted(() => ({
+  NinjaOneClientMock: vi.fn(),
+  constructedConfigs: [] as { clientId: string; clientSecret: string; baseUrl: string }[],
+}));
 
 // Mock the node-ninjaone library
 vi.mock("@wyre-technology/node-ninjaone", () => ({
-  NinjaOneClient: vi.fn().mockImplementation(function (config) { return ({
-    config,
-    devices: {
-      list: vi.fn(),
-      get: vi.fn(),
-      reboot: vi.fn(),
-      getServices: vi.fn(),
-      getAlerts: vi.fn(),
-      getActivities: vi.fn(),
-    },
-    organizations: {
-      list: vi.fn(),
-      get: vi.fn(),
-      create: vi.fn(),
-      getLocations: vi.fn(),
-      getDevices: vi.fn(),
-    },
-    alerts: {
-      list: vi.fn(),
-      reset: vi.fn(),
-      resetAll: vi.fn(),
-      getSummary: vi.fn(),
-    },
-    tickets: {
-      list: vi.fn(),
-      get: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
-      addComment: vi.fn(),
-      getComments: vi.fn(),
-    },
-  }) }),
+  NinjaOneClient: NinjaOneClientMock,
 }));
 
 describe("NinjaOne Client Utilities", () => {
@@ -48,6 +37,47 @@ describe("NinjaOne Client Utilities", () => {
     // Reset environment variables before each test
     process.env = { ...originalEnv };
     clearClient();
+    constructedConfigs.length = 0;
+    NinjaOneClientMock.mockReset();
+    NinjaOneClientMock.mockImplementation(function (config: {
+      clientId: string;
+      clientSecret: string;
+      baseUrl: string;
+    }) {
+      constructedConfigs.push(config);
+      return {
+        config,
+        devices: {
+          list: vi.fn(),
+          get: vi.fn(),
+          reboot: vi.fn(),
+          getServices: vi.fn(),
+          getAlerts: vi.fn(),
+          getActivities: vi.fn(),
+        },
+        organizations: {
+          list: vi.fn(),
+          get: vi.fn(),
+          create: vi.fn(),
+          getLocations: vi.fn(),
+          getDevices: vi.fn(),
+        },
+        alerts: {
+          list: vi.fn(),
+          reset: vi.fn(),
+          resetAll: vi.fn(),
+          getSummary: vi.fn(),
+        },
+        tickets: {
+          list: vi.fn(),
+          get: vi.fn(),
+          create: vi.fn(),
+          update: vi.fn(),
+          addComment: vi.fn(),
+          getComments: vi.fn(),
+        },
+      };
+    });
   });
 
   afterEach(() => {
@@ -271,6 +301,85 @@ describe("NinjaOne Client Utilities", () => {
       const client2 = await getClient();
 
       expect(client1).not.toBe(client2);
+    });
+  });
+
+  describe("gateway credential isolation", () => {
+    it("no longer exports the deleted module-level override functions", () => {
+      const exported = clientModule as unknown as Record<string, unknown>;
+      expect(exported.setClientOverride).toBeUndefined();
+      expect(exported.clearClientOverride).toBeUndefined();
+      expect(exported.setCredentialOverrides).toBeUndefined();
+      expect(exported.clearCredentialOverrides).toBeUndefined();
+    });
+
+    it("isolates concurrent runWithCredentials() calls even when they interleave", async () => {
+      const credsA = {
+        clientId: "tenant-a-id",
+        clientSecret: "tenant-a-secret",
+        region: "us" as const,
+        baseUrl: "https://app.ninjarmm.com",
+      };
+      const credsB = {
+        clientId: "tenant-b-id",
+        clientSecret: "tenant-b-secret",
+        region: "eu" as const,
+        baseUrl: "https://eu.ninjarmm.com",
+      };
+
+      const runA = runWithCredentials(credsA, async () => {
+        // Artificial delay forces real interleaving with runB below, rather
+        // than the two calls simply resolving in program order.
+        await new Promise((r) => setTimeout(r, 10));
+        return { creds: getCredentials(), client: await getClient() };
+      });
+
+      const runB = runWithCredentials(credsB, async () => {
+        await new Promise((r) => setTimeout(r, 10));
+        return { creds: getCredentials(), client: await getClient() };
+      });
+
+      const [resultA, resultB] = await Promise.all([runA, runB]);
+
+      // Each frame must resolve its own credentials, never the other's.
+      expect(resultA.creds).toEqual(credsA);
+      expect(resultB.creds).toEqual(credsB);
+
+      const configA = constructedConfigs.find((c) => c.clientId === credsA.clientId);
+      const configB = constructedConfigs.find((c) => c.clientId === credsB.clientId);
+
+      expect(configA).toMatchObject({
+        clientId: credsA.clientId,
+        clientSecret: credsA.clientSecret,
+      });
+      expect(configB).toMatchObject({
+        clientId: credsB.clientId,
+        clientSecret: credsB.clientSecret,
+      });
+      expect(resultA.client).not.toBe(resultB.client);
+    });
+
+    it("does not populate the shared single-tenant client cache for gateway-scoped requests", async () => {
+      // Prime a genuine single-tenant (env-mode) client + cache.
+      process.env.NINJAONE_CLIENT_ID = "env-id";
+      process.env.NINJAONE_CLIENT_SECRET = "env-secret";
+      process.env.NINJAONE_REGION = "us";
+      const envClient = await getClient();
+
+      const gatewayCreds = {
+        clientId: "gateway-id",
+        clientSecret: "gateway-secret",
+        region: "us" as const,
+        baseUrl: "https://app.ninjarmm.com",
+      };
+      const gatewayClient = await runWithCredentials(gatewayCreds, () => getClient());
+
+      expect(gatewayClient).not.toBe(envClient);
+
+      // A later non-scoped call must still resolve the original env-mode
+      // cached client — the gateway-scoped call above must not have clobbered it.
+      const envClientAgain = await getClient();
+      expect(envClientAgain).toBe(envClient);
     });
   });
 });

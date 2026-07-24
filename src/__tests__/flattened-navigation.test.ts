@@ -15,10 +15,7 @@ vi.mock("../utils/client.js", () => ({
     baseUrl: "https://app.ninjarmm.com",
   }),
   createClientDirect: vi.fn().mockResolvedValue({}),
-  setClientOverride: vi.fn(),
-  clearClientOverride: vi.fn(),
-  setCredentialOverrides: vi.fn(),
-  clearCredentialOverrides: vi.fn(),
+  runWithCredentials: vi.fn((_creds, fn) => fn()),
 }));
 
 // Mock domain handlers using vi.hoisted

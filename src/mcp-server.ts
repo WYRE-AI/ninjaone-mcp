@@ -19,14 +19,15 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { getDomainHandler, getAvailableDomains } from "./domains/index.js";
-import { isDomainName, isValidRegion, getBaseUrlForRegion } from "./utils/types.js";
+import {
+  isDomainName,
+  isValidRegion,
+  getBaseUrlForRegion,
+  type CallToolResult,
+} from "./utils/types.js";
 import {
   getCredentials,
-  createClientDirect,
-  setClientOverride,
-  clearClientOverride,
-  setCredentialOverrides,
-  clearCredentialOverrides,
+  runWithCredentials,
   type NinjaOneCredentials,
 } from "./utils/client.js";
 import { logger } from "./utils/logger.js";
@@ -223,103 +224,96 @@ export async function createMcpServer(
     const { name, arguments: args } = request.params;
     logger.info("Tool call received", { tool: name, arguments: args });
 
-    if (credentialOverrides) {
-      setCredentialOverrides(credentialOverrides);
-      const directClient = await createClientDirect(credentialOverrides);
-      setClientOverride(directClient);
-    }
+    const run = async (): Promise<CallToolResult> => {
+      try {
+        if (name === "ninjaone_navigate") {
+          const domain = (args as { domain: string }).domain;
 
-    try {
-      if (name === "ninjaone_navigate") {
-        const domain = (args as { domain: string }).domain;
+          if (!isDomainName(domain)) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Invalid domain: ${domain}. Available domains: ${getAvailableDomains().join(", ")}`,
+                },
+              ],
+              isError: true,
+            };
+          }
 
-        if (!isDomainName(domain)) {
+          const handler = await getDomainHandler(domain);
+          const domainTools = handler.getTools();
+
+          const toolSummary = domainTools
+            .map((t) => `- ${t.name}: ${t.description}`)
+            .join("\n");
+
           return {
             content: [
               {
                 type: "text",
-                text: `Invalid domain: ${domain}. Available domains: ${getAvailableDomains().join(", ")}`,
+                text: `${domainDescriptions[domain]}\n\nAvailable tools:\n${toolSummary}\n\nYou can call any of these tools directly.`,
               },
             ],
-            isError: true,
           };
         }
 
-        const handler = await getDomainHandler(domain);
-        const domainTools = handler.getTools();
+        if (name === "ninjaone_status") {
+          const creds = getCredentials();
+          const credStatus = creds
+            ? `Configured (region: ${creds.region}, base URL: ${creds.baseUrl})`
+            : "NOT CONFIGURED - Please set environment variables";
 
-        const toolSummary = domainTools
-          .map((t) => `- ${t.name}: ${t.description}`)
-          .join("\n");
+          return {
+            content: [
+              {
+                type: "text",
+                text: `NinjaOne MCP Server Status\n\nCredentials: ${credStatus}\nAvailable domains: ${getAvailableDomains().join(", ")}\n\nAll tools are available. Use ninjaone_navigate to discover tools by domain.`,
+              },
+            ],
+          };
+        }
+
+        const toolArgs = (args ?? {}) as Record<string, unknown>;
+
+        if (name.startsWith("ninjaone_devices_")) {
+          const handler = await getDomainHandler("devices");
+          return await handler.handleCall(name, toolArgs);
+        }
+        if (name.startsWith("ninjaone_organizations_")) {
+          const handler = await getDomainHandler("organizations");
+          return await handler.handleCall(name, toolArgs);
+        }
+        if (name.startsWith("ninjaone_alerts_")) {
+          const handler = await getDomainHandler("alerts");
+          return await handler.handleCall(name, toolArgs);
+        }
+        if (name.startsWith("ninjaone_tickets_")) {
+          const handler = await getDomainHandler("tickets");
+          return await handler.handleCall(name, toolArgs);
+        }
 
         return {
           content: [
             {
               type: "text",
-              text: `${domainDescriptions[domain]}\n\nAvailable tools:\n${toolSummary}\n\nYou can call any of these tools directly.`,
+              text: `Unknown tool: ${name}. Use ninjaone_navigate to discover available tools by domain.`,
             },
           ],
+          isError: true,
         };
-      }
-
-      if (name === "ninjaone_status") {
-        const creds = getCredentials();
-        const credStatus = creds
-          ? `Configured (region: ${creds.region}, base URL: ${creds.baseUrl})`
-          : "NOT CONFIGURED - Please set environment variables";
-
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        logger.error("Tool call failed", { tool: name, error: message, stack });
         return {
-          content: [
-            {
-              type: "text",
-              text: `NinjaOne MCP Server Status\n\nCredentials: ${credStatus}\nAvailable domains: ${getAvailableDomains().join(", ")}\n\nAll tools are available. Use ninjaone_navigate to discover tools by domain.`,
-            },
-          ],
+          content: [{ type: "text", text: `Error: ${message}` }],
+          isError: true,
         };
       }
+    };
 
-      const toolArgs = (args ?? {}) as Record<string, unknown>;
-
-      if (name.startsWith("ninjaone_devices_")) {
-        const handler = await getDomainHandler("devices");
-        return await handler.handleCall(name, toolArgs);
-      }
-      if (name.startsWith("ninjaone_organizations_")) {
-        const handler = await getDomainHandler("organizations");
-        return await handler.handleCall(name, toolArgs);
-      }
-      if (name.startsWith("ninjaone_alerts_")) {
-        const handler = await getDomainHandler("alerts");
-        return await handler.handleCall(name, toolArgs);
-      }
-      if (name.startsWith("ninjaone_tickets_")) {
-        const handler = await getDomainHandler("tickets");
-        return await handler.handleCall(name, toolArgs);
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Unknown tool: ${name}. Use ninjaone_navigate to discover available tools by domain.`,
-          },
-        ],
-        isError: true,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const stack = error instanceof Error ? error.stack : undefined;
-      logger.error("Tool call failed", { tool: name, error: message, stack });
-      return {
-        content: [{ type: "text", text: `Error: ${message}` }],
-        isError: true,
-      };
-    } finally {
-      if (credentialOverrides) {
-        clearClientOverride();
-        clearCredentialOverrides();
-      }
-    }
+    return credentialOverrides ? runWithCredentials(credentialOverrides, run) : run();
   });
 
   return server;
