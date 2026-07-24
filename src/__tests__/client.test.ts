@@ -260,15 +260,20 @@ describe("NinjaOne Client Utilities", () => {
       process.env.NINJAONE_CLIENT_SECRET = "test-secret";
       process.env.NINJAONE_REGION = "us";
 
-      const client1 = await getClient();
+      const client1 = (await getClient()) as unknown as { config: { clientId: string } };
 
       // Change credentials
       process.env.NINJAONE_CLIENT_ID = "test-id-2";
       clearClient();
 
-      const client2 = await getClient();
+      const client2 = (await getClient()) as unknown as { config: { clientId: string } };
 
+      // Identity alone (not.toBe) would pass even if getClient() ignored
+      // the changed env var and rebuilt from stale credentials — the
+      // load-bearing check is that client2 actually reflects the new value.
       expect(client1).not.toBe(client2);
+      expect(client1.config.clientId).toBe("test-id-1");
+      expect(client2.config.clientId).toBe("test-id-2");
     });
 
     // Regression: before the fix, a left-blank optional region arrived as the
@@ -300,7 +305,14 @@ describe("NinjaOne Client Utilities", () => {
       clearClient();
       const client2 = await getClient();
 
+      // Distinct object identity proves a new instance was actually built
+      // (not just returned from cache); the constructedConfigs count proves
+      // it was built twice, not that a stale value silently short-circuited
+      // the cache invalidation.
       expect(client1).not.toBe(client2);
+      expect(constructedConfigs).toHaveLength(2);
+      expect(constructedConfigs[0]).toMatchObject({ clientId: "test-id" });
+      expect(constructedConfigs[1]).toMatchObject({ clientId: "test-id" });
     });
   });
 
