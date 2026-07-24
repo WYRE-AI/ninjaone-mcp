@@ -1,5 +1,23 @@
 ## [Unreleased]
 
+### Security
+
+- **Fixed a cross-tenant credential leak in gateway mode.** Gateway mode
+  previously stored per-request vendor credentials/client on module-level
+  mutable singletons (`_clientOverride`, `_credentialOverrides` in
+  `src/utils/client.ts`), set at the top of the `CallToolRequestSchema`
+  handler and cleared in a `finally` block. Real `await` gaps between set and
+  clear (dispatch into any of the 4 domain handlers, each of which awaits
+  network I/O) meant a concurrent request from a different tenant could
+  observe another tenant's vendor client/credentials. Replaced both
+  singletons with `AsyncLocalStorage`-scoped storage (`runWithCredentials()`)
+  — each gateway request now runs inside its own isolated async context, so
+  `getCredentials()` / `getClient()` always resolve that request's own
+  credentials regardless of how requests interleave. No shared mutable state
+  remains in the gateway code path; the 4 domain handler files
+  (`devices.ts`, `organizations.ts`, `alerts.ts`, `tickets.ts`) are
+  unchanged.
+
 ### Added
 
 - **Interactive alert card via MCP Apps (SEP-1865).** A new `ninjaone_alerts_get`

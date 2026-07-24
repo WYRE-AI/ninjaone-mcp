@@ -1,11 +1,21 @@
 /**
- * Lazy-loaded NinjaOne client
+ * Lazy-initialized NinjaOne client
  *
- * This module provides lazy initialization of the NinjaOne client
- * to avoid loading the entire library upfront.
+ * This module defers *constructing* a NinjaOneClient instance until the
+ * first `getClient()` call (single-tenant env mode caches it thereafter;
+ * gateway mode constructs one per request via `createClientDirect()`).
+ *
+ * The SDK is imported statically (not via a dynamic `await import()`):
+ * under real concurrent load, a dynamic import of a module that is also
+ * `vi.mock()`-intercepted can race and resolve to the real, un-mocked
+ * module for one of the concurrent calls — the same flake class hit by
+ * ncentral-mcp and connectwise-automate-mcp this week (symptom there:
+ * "only 1 of N expected mock instances shows up"; here, both requests
+ * silently fell through to the real SDK and made live HTTP calls). A
+ * static import always resolves through the mocked binding.
  */
-
-import type { NinjaOneClient } from "@wyre-technology/node-ninjaone";
+import { NinjaOneClient } from "@wyre-technology/node-ninjaone";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { isValidRegion, getBaseUrlForRegion, type NinjaOneRegion } from "./types.js";
 import { logger } from "./logger.js";
 
@@ -26,11 +36,17 @@ const CONFIG_PLACEHOLDER = /^\$\{.*\}$/;
 let _client: NinjaOneClient | null = null;
 let _credentials: NinjaOneCredentials | null = null;
 
-/** Per-request client override — takes priority over the cached singleton */
-let _clientOverride: NinjaOneClient | null = null;
+/**
+ * Request-scoped credentials for gateway mode. The HTTP/Worker entrypoint wraps
+ * each request's handling in runWithCredentials(creds, fn); getCredentials() reads
+ * it via .getStore(). Concurrent requests each get their own isolated store frame —
+ * there is no shared mutable state left to race on.
+ */
+const credentialStore = new AsyncLocalStorage<NinjaOneCredentials>();
 
-/** Per-request credential override — takes priority over env vars */
-let _credentialOverrides: NinjaOneCredentials | null = null;
+export function runWithCredentials<T>(creds: NinjaOneCredentials, fn: () => T): T {
+  return credentialStore.run(creds, fn);
+}
 
 /**
  * Create a fresh NinjaOneClient directly from credentials,
@@ -39,7 +55,6 @@ let _credentialOverrides: NinjaOneCredentials | null = null;
 export async function createClientDirect(
   creds: NinjaOneCredentials
 ): Promise<NinjaOneClient> {
-  const { NinjaOneClient } = await import("@wyre-technology/node-ninjaone");
   return new NinjaOneClient({
     clientId: creds.clientId,
     clientSecret: creds.clientSecret,
@@ -48,41 +63,12 @@ export async function createClientDirect(
 }
 
 /**
- * Set a request-scoped client override.
- * While set, getClient() returns this instance instead of the cached one.
- */
-export function setClientOverride(client: NinjaOneClient): void {
-  _clientOverride = client;
-}
-
-/**
- * Clear the request-scoped client override.
- */
-export function clearClientOverride(): void {
-  _clientOverride = null;
-}
-
-/**
- * Set request-scoped credential overrides.
- * While set, getCredentials() returns these instead of reading env vars.
- */
-export function setCredentialOverrides(creds: NinjaOneCredentials): void {
-  _credentialOverrides = creds;
-}
-
-/**
- * Clear request-scoped credential overrides.
- */
-export function clearCredentialOverrides(): void {
-  _credentialOverrides = null;
-}
-
-/**
- * Get credentials from environment variables (or per-request overrides)
+ * Get credentials from environment variables (or the request-scoped ALS override)
  */
 export function getCredentials(): NinjaOneCredentials | null {
-  if (_credentialOverrides) {
-    return _credentialOverrides;
+  const scoped = credentialStore.getStore();
+  if (scoped) {
+    return scoped;
   }
 
   const clientId = process.env.NINJAONE_CLIENT_ID;
@@ -120,16 +106,20 @@ export function getCredentials(): NinjaOneCredentials | null {
  * Get or create the NinjaOne client (lazy initialization)
  */
 export async function getClient(): Promise<NinjaOneClient> {
-  if (_clientOverride) {
-    return _clientOverride;
-  }
-
   const creds = getCredentials();
 
   if (!creds) {
     throw new Error(
       "No API credentials provided. Please configure NINJAONE_CLIENT_ID, NINJAONE_CLIENT_SECRET, and optionally NINJAONE_REGION (us, eu, oc, ca, us2, fed) environment variables."
     );
+  }
+
+  // Gateway (request-scoped) credentials never populate the shared _client /
+  // _credentials cache below — doing so would reintroduce a milder version of
+  // the same cross-tenant bug for subsequent non-scoped (env-mode) calls.
+  const scoped = credentialStore.getStore();
+  if (scoped) {
+    return createClientDirect(scoped);
   }
 
   // If credentials changed, invalidate the cached client
@@ -146,7 +136,6 @@ export async function getClient(): Promise<NinjaOneClient> {
 
   if (!_client) {
     try {
-      const { NinjaOneClient } = await import("@wyre-technology/node-ninjaone");
       logger.info("Creating NinjaOne client", { region: creds.region, baseUrl: creds.baseUrl });
       _client = new NinjaOneClient({
         clientId: creds.clientId,
