@@ -1,14 +1,10 @@
 // MCP Prompt Handlers for NinjaOne MCP Server
 // Exposes pre-baked prompt templates via ListPrompts and GetPrompt handlers
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import {
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+import { Server } from "@modelcontextprotocol/server";
 
 export function registerPromptHandlers(server: Server): void {
-  server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+  server.setRequestHandler('prompts/list', async () => ({
     prompts: [
       {
         name: 'device-health-summary',
@@ -46,7 +42,7 @@ export function registerPromptHandlers(server: Server): void {
     ],
   }));
 
-  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  server.setRequestHandler('prompts/get', async (request) => {
     const { name, arguments: args } = request.params;
 
     switch (name) {

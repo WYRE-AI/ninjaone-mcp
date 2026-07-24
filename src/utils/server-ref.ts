@@ -2,7 +2,7 @@
  * Shared MCP Server reference for elicitation support.
  * Avoids circular imports by decoupling server instance from domain handlers.
  */
-import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import type { Server } from "@modelcontextprotocol/server";
 
 let _server: Server | null = null;
 

@@ -1,11 +1,13 @@
 /**
  * Cloudflare Workers entry point for the NinjaOne MCP Server.
  *
- * Serves the full MCP server over the Streamable HTTP transport using the SDK's
- * Web Standard transport (Request/Response), which runs natively on Workers.
- * It reuses the exact same `createMcpServer()` factory as the stdio / Node HTTP
- * entrypoints (see `mcp-server.ts`), so there is no second tool implementation
- * to maintain.
+ * Serves the full MCP server via the v2 SDK's `createMcpHandler`, whose
+ * web-standard `fetch` face runs natively on Workers. Dual protocol eras are
+ * served from one handler: legacy 2025-era clients statelessly per request
+ * (`legacy: 'stateless'`), modern 2026-07-28 envelope clients natively.
+ * It reuses the exact same `createMcpServer()` factory as the stdio / Node
+ * HTTP entrypoints (see `mcp-server.ts`), so there is no second tool
+ * implementation to maintain.
  *
  * Credentials are resolved per request, in order:
  * 1. Gateway headers (when AUTH_MODE=gateway):
@@ -20,13 +22,11 @@
  * `tools/list` and `initialize` work without credentials; only `tools/call`
  * requires them.
  */
-
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { createMcpHandler, type McpHttpHandler } from "@modelcontextprotocol/server";
 import {
-  createMcpServer,
+  makeMcpServerFactory,
   resolveGatewayCredentials,
   buildCredentials,
-  type NinjaOneCredentials,
 } from "./mcp-server.js";
 
 export interface Env {
@@ -58,6 +58,39 @@ function withCors(res: Response): Response {
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
+/**
+ * One MCP handler per distinct Worker `env` object. In production the runtime
+ * passes the same `env` to every fetch in an isolate, so this memoizes to a
+ * single handler per isolate; the handler's factory still runs per request
+ * (stateless), exactly like the previous per-request Server + Transport
+ * wiring. Tests that pass differing env objects each get a matching handler.
+ */
+const handlers = new WeakMap<Env, McpHttpHandler>();
+
+function getMcpHandler(env: Env): McpHttpHandler {
+  let handler = handlers.get(env);
+  if (!handler) {
+    const isGatewayMode = (env.AUTH_MODE ?? "env") === "gateway";
+    handler = createMcpHandler(
+      makeMcpServerFactory({
+        gatewayMode: isGatewayMode,
+        // env mode: build credentials from Worker secrets if present.
+        // (Absent creds are fine — tools/list still works, tools/call errors.)
+        envCredentials: isGatewayMode
+          ? undefined
+          : buildCredentials(
+              env.NINJAONE_CLIENT_ID,
+              env.NINJAONE_CLIENT_SECRET,
+              env.NINJAONE_REGION
+            ).creds,
+      }),
+      { legacy: "stateless" }
+    );
+    handlers.set(env, handler);
+  }
+  return handler;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -75,9 +108,8 @@ export default {
     if (url.pathname === "/mcp") {
       const isGatewayMode = (env.AUTH_MODE ?? "env") === "gateway";
 
-      let credOverrides: NinjaOneCredentials | undefined;
       if (isGatewayMode) {
-        const { creds, error } = resolveGatewayCredentials(
+        const { error } = resolveGatewayCredentials(
           (name) => request.headers.get(name) ?? undefined
         );
         if (error) {
@@ -91,33 +123,12 @@ export default {
             401
           );
         }
-        credOverrides = creds;
-      } else {
-        // env mode: build credentials from Worker secrets if present.
-        // (Absent creds are fine — tools/list still works, tools/call errors.)
-        const { creds } = buildCredentials(
-          env.NINJAONE_CLIENT_ID,
-          env.NINJAONE_CLIENT_SECRET,
-          env.NINJAONE_REGION
-        );
-        credOverrides = creds;
       }
 
-      // Fresh server + transport per request (stateless).
-      const server = await createMcpServer(credOverrides);
-      const transport = new WebStandardStreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-        enableJsonResponse: true,
-      });
-      await server.connect(transport);
-
-      try {
-        const response = await transport.handleRequest(request);
-        return withCors(response);
-      } finally {
-        await transport.close();
-        await server.close();
-      }
+      // Per-request credential binding happens inside the factory (gateway
+      // mode reads the X-Ninja-* headers from ctx.requestInfo every request).
+      const response = await getMcpHandler(env).fetch(request);
+      return withCors(response);
     }
 
     return json(

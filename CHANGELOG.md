@@ -32,6 +32,32 @@
 
 ### Changed
 
+- **Migrated from `@modelcontextprotocol/sdk` v1 (1.29.0) to the v2 beta SDK**
+  (`@modelcontextprotocol/server` + `@modelcontextprotocol/node`,
+  2.0.0-beta.5) with **dual-era serving**: one endpoint now serves both
+  legacy 2025-era clients (classic `initialize` handshake) and modern
+  2026-07-28 envelope clients.
+  - All entrypoints consume the one shared server factory (`mcp-server.ts`):
+    stdio serves via `serveStdio`, Node HTTP via `createMcpHandler` +
+    `toNodeHandler`, and the Cloudflare Worker via the same
+    `createMcpHandler`. Legacy traffic is served with `legacy: 'stateless'`
+    (a fresh server instance per request — the same stateless idiom this
+    server already used), so existing clients keep working unchanged.
+  - The gateway credential-header contract is unchanged: `X-Ninja-Client-ID`,
+    `X-Ninja-Client-Secret`, and optional `X-Ninja-Region` are still read per
+    request in gateway mode (missing headers still answer 401 with the same
+    body), and the tool surface served by `tools/list` is identical (25 tools,
+    same names, same input schemas, same `_meta`).
+  - Wire note: responses to legacy-era POSTs are now delivered as SSE
+    (`text/event-stream`) instead of a single JSON body. Both encodings are
+    part of the streamable-HTTP transport spec and every conformant client
+    accepts both (clients already send `Accept: application/json,
+    text/event-stream`); legacy-era GET/DELETE session operations now answer
+    405, as stateless serving always implied.
+  - A dual-era smoke test (`scripts/smoke-dual-era.mjs`) proves both eras
+    against the built server: a hand-crafted 2025-03-26 JSON-RPC client and a
+    v2 `@modelcontextprotocol/client` StreamableHTTP client both list the
+    same 25 tools.
 - **Breaking:** `ninjaone_tickets_list` now requires `board_id` instead of
   silently falling back to board 1 ([#54](https://github.com/wyre-technology/ninjaone-mcp/issues/54)).
   Board IDs are tenant-specific — on multi-board tenants the old fallback could

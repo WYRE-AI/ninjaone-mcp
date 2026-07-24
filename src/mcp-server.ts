@@ -3,21 +3,15 @@
  *
  * This module is **side-effect free** (importing it never starts a transport),
  * so it can be reused by every entrypoint:
- * - `index.ts` — stdio + Node HTTP transport
- * - `worker.ts` — Cloudflare Workers (Web Standard) transport
+ * - `index.ts` — stdio + Node HTTP serving
+ * - `worker.ts` — Cloudflare Workers serving
  *
  * All NinjaOne tools are exposed upfront (flat architecture) for universal MCP
  * client compatibility.
  */
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  CallToolRequestSchema,
-  ListResourcesRequestSchema,
-  ListToolsRequestSchema,
-  ReadResourceRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { Server } from "@modelcontextprotocol/server";
+import type { McpServerFactory, Tool } from "@modelcontextprotocol/server";
 import { getDomainHandler, getAvailableDomains } from "./domains/index.js";
 import { isDomainName, isValidRegion, getBaseUrlForRegion } from "./utils/types.js";
 import {
@@ -153,6 +147,33 @@ export function resolveGatewayCredentials(
 }
 
 /**
+ * Bind `createMcpServer` into the `McpServerFactory` shape the v2 HTTP serving
+ * entry (`createMcpHandler`) consumes. The factory runs once per HTTP request
+ * — the same fresh-instance-per-request stateless idiom this server has always
+ * used — for BOTH protocol eras (legacy 2025 traffic and modern 2026-07-28
+ * envelope traffic).
+ *
+ * In gateway mode the request's X-Ninja-* headers are read from
+ * `ctx.requestInfo`, keeping credentials bound per request. Missing headers
+ * are answered 401 by the HTTP layer before serving ever starts; if a request
+ * slips through without them, tools/call reports the credential error in-band.
+ */
+export function makeMcpServerFactory(options: {
+  gatewayMode: boolean;
+  envCredentials?: NinjaOneCredentials;
+}): McpServerFactory {
+  return (ctx) => {
+    if (options.gatewayMode) {
+      const { creds } = resolveGatewayCredentials(
+        (name) => ctx.requestInfo?.headers.get(name) ?? undefined
+      );
+      return createMcpServer(creds);
+    }
+    return createMcpServer(options.envCredentials);
+  };
+}
+
+/**
  * Create a fresh MCP server instance with all handlers registered.
  * Called once for stdio, or per-request for HTTP / Workers transports.
  *
@@ -181,14 +202,14 @@ export async function createMcpServer(
   setServerRef(server);
   registerPromptHandlers(server);
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
+  server.setRequestHandler('tools/list', async () => {
     return { tools: [navigateTool, statusTool, ...allDomainTools] };
   });
 
   // MCP Apps (SEP-1865): the ui:// alert card is static HTML embedded at
   // build time (src/generated/alert-card-html.ts), so it serves identically
   // from stdio, Node HTTP, and the fs-less Cloudflare Workers runtime.
-  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  server.setRequestHandler('resources/list', async () => {
     return {
       resources: [
         {
@@ -201,7 +222,7 @@ export async function createMcpServer(
     };
   });
 
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  server.setRequestHandler('resources/read', async (request) => {
     const { uri } = request.params;
     if (uri !== ALERT_CARD_RESOURCE_URI) {
       throw new Error(`Unknown resource: ${uri}`);
@@ -219,7 +240,7 @@ export async function createMcpServer(
     };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler('tools/call', async (request) => {
     const { name, arguments: args } = request.params;
     logger.info("Tool call received", { tool: name, arguments: args });
 

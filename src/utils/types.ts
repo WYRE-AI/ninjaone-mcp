@@ -1,8 +1,7 @@
 /**
  * Shared types for the NinjaOne MCP server
  */
-
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { Tool } from "@modelcontextprotocol/server";
 
 /**
  * Tool call result type - inline definition for MCP SDK compatibility

@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from "vitest";
 import worker, { type Env } from "../worker.js";
+import { mcpJson } from "./helpers.js";
 
 const MCP_HEADERS = {
   Accept: "application/json, text/event-stream",
@@ -58,14 +59,14 @@ describe("Cloudflare Worker entrypoint", () => {
       },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { result?: { serverInfo?: { name?: string } } };
+    const body = (await mcpJson(res)) as { result?: { serverInfo?: { name?: string } } };
     expect(body.result?.serverInfo?.name).toBe("ninjaone-mcp");
   });
 
   it("lists all tools without credentials", async () => {
     const res = await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { result?: { tools?: { name: string }[] } };
+    const body = (await mcpJson(res)) as { result?: { tools?: { name: string }[] } };
     const names = (body.result?.tools ?? []).map((t) => t.name);
     expect(names).toContain("ninjaone_navigate");
     expect(names).toContain("ninjaone_status");
@@ -80,7 +81,7 @@ describe("Cloudflare Worker entrypoint", () => {
       params: { name: "ninjaone_devices_list", arguments: {} },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as {
+    const body = (await mcpJson(res)) as {
       result?: { isError?: boolean; content?: { text?: string }[] };
     };
     expect(body.result?.isError).toBe(true);
