@@ -20,6 +20,7 @@ import {
   MCP_APP_RESOURCE_MIME,
 } from "../alert-card.js";
 import { ALERT_CARD_HTML } from "../generated/alert-card-html.js";
+import { mcpJson } from "./helpers.js";
 
 const { mockAlertsGet, mockAlertsReset, mockDevicesGet, mockOrgsGet } = vi.hoisted(() => ({
   mockAlertsGet: vi.fn(),
@@ -95,7 +96,7 @@ describe("MCP Apps alert card", () => {
         params: {},
       });
       expect(res.status).toBe(200);
-      const body = (await res.json()) as {
+      const body = (await mcpJson(res)) as {
         result?: {
           tools?: { name: string; _meta?: Record<string, unknown> }[];
         };
@@ -117,7 +118,7 @@ describe("MCP Apps alert card", () => {
         method: "tools/list",
         params: {},
       });
-      const body = (await res.json()) as {
+      const body = (await mcpJson(res)) as {
         result?: {
           tools?: { name: string; _meta?: Record<string, unknown> }[];
         };
@@ -140,7 +141,7 @@ describe("MCP Apps alert card", () => {
         params: {},
       });
       expect(res.status).toBe(200);
-      const body = (await res.json()) as {
+      const body = (await mcpJson(res)) as {
         result?: { resources?: { uri: string; mimeType?: string }[] };
       };
       const card = body.result?.resources?.find(
@@ -157,7 +158,7 @@ describe("MCP Apps alert card", () => {
         params: { uri: ALERT_CARD_RESOURCE_URI },
       });
       expect(res.status).toBe(200);
-      const body = (await res.json()) as {
+      const body = (await mcpJson(res)) as {
         result?: { contents?: { uri: string; mimeType?: string; text?: string }[] };
       };
       const content = body.result?.contents?.[0];
@@ -178,7 +179,7 @@ describe("MCP Apps alert card", () => {
         method: "resources/read",
         params: { uri: ALERT_CARD_RESOURCE_URI },
       });
-      const body = (await res.json()) as {
+      const body = (await mcpJson(res)) as {
         result?: { contents?: { text?: string }[] };
       };
       const text = body.result?.contents?.[0]?.text ?? "";
@@ -193,7 +194,7 @@ describe("MCP Apps alert card", () => {
         method: "resources/read",
         params: { uri: "ui://ninjaone/nope.html" },
       });
-      const body = (await res.json()) as { error?: { message?: string } };
+      const body = (await mcpJson(res)) as { error?: { message?: string } };
       expect(body.error?.message).toMatch(/Unknown resource/);
     });
   });
@@ -223,7 +224,7 @@ describe("MCP Apps alert card", () => {
         CREDS_ENV
       );
       expect(res.status).toBe(200);
-      const body = (await res.json()) as {
+      const body = (await mcpJson(res)) as {
         result?: { isError?: boolean; content?: { text?: string }[] };
       };
       expect(body.result?.isError).toBeFalsy();
@@ -260,7 +261,7 @@ describe("MCP Apps alert card", () => {
         },
         CREDS_ENV
       );
-      const body = (await res.json()) as {
+      const body = (await mcpJson(res)) as {
         result?: { isError?: boolean; content?: { text?: string }[] };
       };
       expect(body.result?.isError).toBeFalsy();
@@ -286,7 +287,7 @@ describe("MCP Apps alert card", () => {
         },
         CREDS_ENV
       );
-      const body = (await res.json()) as {
+      const body = (await mcpJson(res)) as {
         result?: { isError?: boolean; content?: { text?: string }[] };
       };
       expect(body.result?.isError).toBeFalsy();

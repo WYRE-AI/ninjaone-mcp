@@ -9,8 +9,11 @@
  * - stdio (default): For local Claude Desktop / CLI usage
  * - http: For hosted deployment with optional gateway auth
  *
- * The Cloudflare Workers entrypoint lives in `worker.ts` and reuses the same
- * `createMcpServer()` factory from `mcp-server.ts`.
+ * Both entrypoints serve dual protocol eras via the v2 SDK serving entries:
+ * legacy 2025-era clients (classic `initialize` handshake) are served
+ * statelessly per request, and modern 2026-07-28 envelope clients natively —
+ * from the same server factory (`mcp-server.ts`). The Cloudflare Workers
+ * entrypoint lives in `worker.ts` and reuses that factory too.
  *
  * Credentials are provided via environment variables:
  * - NINJAONE_CLIENT_ID
@@ -24,33 +27,52 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
-import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { createMcpHandler } from "@modelcontextprotocol/server";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import { toNodeHandler } from "@modelcontextprotocol/node";
 import {
   createMcpServer,
+  makeMcpServerFactory,
   resolveGatewayCredentials,
-  type NinjaOneCredentials,
 } from "./mcp-server.js";
 import { logger } from "./utils/logger.js";
 
 /**
- * Start the server with stdio transport (default)
+ * Start the server with stdio transport (default).
+ * `serveStdio` owns the era decision: a 2025-era `initialize` pins the
+ * connection legacy; modern envelope openings are served natively.
  */
-async function startStdioTransport(): Promise<void> {
-  const server = await createMcpServer();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+function startStdioTransport(): void {
+  serveStdio(() => createMcpServer(), {
+    onerror: (error) => logger.error("stdio serving error", { error: error.message }),
+  });
   logger.info("NinjaOne MCP server running on stdio (flattened mode)");
 }
 
 /**
- * Start the server with HTTP Streamable transport.
- * Each request gets a fresh Server + Transport (stateless).
+ * Start the server with HTTP serving via `createMcpHandler`.
+ * The handler is created once; its factory runs per request (stateless),
+ * exactly like the previous per-request Server + Transport wiring.
  */
 async function startHttpTransport(): Promise<void> {
   const port = parseInt(process.env.MCP_HTTP_PORT || "8080", 10);
   const host = process.env.MCP_HTTP_HOST || "0.0.0.0";
   const isGatewayMode = process.env.AUTH_MODE === "gateway";
+
+  // legacy: 'stateless' (also the default) is the dual-era posture: 2025-era
+  // traffic is answered per-request statelessly, modern 2026-07-28 envelope
+  // traffic natively. Never use legacy: 'reject' here — it would turn away
+  // every pre-envelope client.
+  const mcpHandler = createMcpHandler(
+    makeMcpServerFactory({ gatewayMode: isGatewayMode }),
+    {
+      legacy: "stateless",
+      onerror: (error) => logger.error("MCP serving error", { error: error.message }),
+    }
+  );
+  const handleMcpRequest = toNodeHandler(mcpHandler, {
+    onerror: (error) => logger.error("MCP request adapter error", { error: error.message }),
+  });
 
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
@@ -67,9 +89,8 @@ async function startHttpTransport(): Promise<void> {
 
     // MCP endpoint
     if (url.pathname === "/mcp") {
-      let credOverrides: NinjaOneCredentials | undefined;
       if (isGatewayMode) {
-        const { creds, error } = resolveGatewayCredentials(
+        const { error } = resolveGatewayCredentials(
           (name) => req.headers[name] as string | undefined
         );
         if (error) {
@@ -84,23 +105,11 @@ async function startHttpTransport(): Promise<void> {
           );
           return;
         }
-        credOverrides = creds;
       }
 
-      // Create fresh server + transport per request (stateless)
-      const server = await createMcpServer(credOverrides);
-      const transport = new NodeStreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-        enableJsonResponse: true,
-      });
-
-      res.on("close", () => {
-        transport.close();
-        server.close();
-      });
-
-      await server.connect(transport);
-      transport.handleRequest(req, res);
+      // Per-request credential binding happens inside the factory (it reads
+      // the gateway headers from ctx.requestInfo on every request).
+      await handleMcpRequest(req, res);
       return;
     }
 
@@ -121,6 +130,7 @@ async function startHttpTransport(): Promise<void> {
   // Graceful shutdown
   const shutdown = async () => {
     logger.info("Shutting down NinjaOne MCP server...");
+    await mcpHandler.close();
     await new Promise<void>((resolve, reject) => {
       httpServer.close((err) => (err ? reject(err) : resolve()));
     });
@@ -145,7 +155,7 @@ async function main() {
   if (transportType === "http") {
     await startHttpTransport();
   } else {
-    await startStdioTransport();
+    startStdioTransport();
   }
 }
 

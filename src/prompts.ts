@@ -1,7 +1,7 @@
-import { Server } from "@modelcontextprotocol/server";
-
 // MCP Prompt Handlers for NinjaOne MCP Server
 // Exposes pre-baked prompt templates via ListPrompts and GetPrompt handlers
+
+import { Server } from "@modelcontextprotocol/server";
 
 export function registerPromptHandlers(server: Server): void {
   server.setRequestHandler('prompts/list', async () => ({

@@ -1,5 +1,17 @@
+/**
+ * Shared MCP server factory for NinjaOne.
+ *
+ * This module is **side-effect free** (importing it never starts a transport),
+ * so it can be reused by every entrypoint:
+ * - `index.ts` — stdio + Node HTTP serving
+ * - `worker.ts` — Cloudflare Workers serving
+ *
+ * All NinjaOne tools are exposed upfront (flat architecture) for universal MCP
+ * client compatibility.
+ */
+
 import { Server } from "@modelcontextprotocol/server";
-import type { Tool } from "@modelcontextprotocol/server";
+import type { McpServerFactory, Tool } from "@modelcontextprotocol/server";
 import { getDomainHandler, getAvailableDomains } from "./domains/index.js";
 import { isDomainName, isValidRegion, getBaseUrlForRegion } from "./utils/types.js";
 import {
@@ -132,6 +144,33 @@ export function resolveGatewayCredentials(
     getHeader("x-ninja-client-secret"),
     getHeader("x-ninja-region")
   );
+}
+
+/**
+ * Bind `createMcpServer` into the `McpServerFactory` shape the v2 HTTP serving
+ * entry (`createMcpHandler`) consumes. The factory runs once per HTTP request
+ * — the same fresh-instance-per-request stateless idiom this server has always
+ * used — for BOTH protocol eras (legacy 2025 traffic and modern 2026-07-28
+ * envelope traffic).
+ *
+ * In gateway mode the request's X-Ninja-* headers are read from
+ * `ctx.requestInfo`, keeping credentials bound per request. Missing headers
+ * are answered 401 by the HTTP layer before serving ever starts; if a request
+ * slips through without them, tools/call reports the credential error in-band.
+ */
+export function makeMcpServerFactory(options: {
+  gatewayMode: boolean;
+  envCredentials?: NinjaOneCredentials;
+}): McpServerFactory {
+  return (ctx) => {
+    if (options.gatewayMode) {
+      const { creds } = resolveGatewayCredentials(
+        (name) => ctx.requestInfo?.headers.get(name) ?? undefined
+      );
+      return createMcpServer(creds);
+    }
+    return createMcpServer(options.envCredentials);
+  };
 }
 
 /**
