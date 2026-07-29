@@ -25,7 +25,7 @@ import {
   type NinjaOneCredentials,
 } from "./utils/client.js";
 import { logger } from "./utils/logger.js";
-import { setServerRef } from "./utils/server-ref.js";
+import { bindServerRef } from "./utils/server-ref.js";
 import { registerPromptHandlers } from "./prompts.js";
 import {
   ALERT_CARD_RESOURCE_URI,
@@ -200,7 +200,7 @@ export async function createMcpServer(
       },
     }
   );
-  setServerRef(server);
+  bindServerRef(server);
   registerPromptHandlers(server);
 
   server.setRequestHandler('tools/list', async () => {
