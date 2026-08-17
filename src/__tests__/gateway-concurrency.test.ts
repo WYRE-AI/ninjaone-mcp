@@ -19,6 +19,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import worker, { type Env } from "../worker.js";
+import { mcpJson } from "./helpers.js";
 
 interface CapturedConfig {
   clientId: string;
@@ -103,10 +104,12 @@ describe("Gateway mode: cross-tenant credential isolation under real concurrency
     expect(resA.status).toBe(200);
     expect(resB.status).toBe(200);
 
-    const bodyA = (await resA.json()) as {
+    // Legacy stateless serving answers POSTs as SSE, so decode via the shared
+    // helper rather than assuming a single JSON body.
+    const bodyA = (await mcpJson(resA)) as {
       result?: { content?: { text?: string }[] };
     };
-    const bodyB = (await resB.json()) as {
+    const bodyB = (await mcpJson(resB)) as {
       result?: { content?: { text?: string }[] };
     };
 
