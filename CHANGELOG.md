@@ -1,5 +1,26 @@
 ## [Unreleased]
 
+### Fixed
+
+- **A monitoring-only API app could not authenticate at all.** The server never
+  passed an explicit scope list to the SDK, so every token request fell through
+  to the SDK default of `["monitoring", "management"]` and asked for
+  `scope=monitoring management`. NinjaOne rejects a client_credentials request
+  naming a scope the app was never granted (`400 invalid_scope`) rather than
+  narrowing the grant, so an app scoped to monitoring only failed at the token
+  exchange — before any tool logic ran. Every tool call failed with
+  `Failed to acquire token: 400`, including pure reads that need nothing beyond
+  monitoring, and the only apparent workaround was to over-grant `management`.
+  Scopes are now configurable via `NINJAONE_SCOPES` (or the `X-Ninja-Scopes`
+  header in gateway mode); the default is unchanged, so existing deployments
+  behave exactly as before.
+- **Tool errors dropped the upstream response body.** The tool-call handler
+  reported only `error.message`, discarding the `NinjaOneError.response` payload
+  that the SDK had already captured. An OAuth failure therefore read as a bare
+  `Failed to acquire token: 400 Bad Request` with the one diagnostic word —
+  `invalid_scope` — thrown away. The body is now appended, and an
+  `invalid_scope` rejection additionally explains how to fix it.
+
 ### Security
 
 - **Fixed a cross-tenant credential leak in gateway mode.** Gateway mode

@@ -76,7 +76,8 @@ Set the following environment variables:
 |----------|----------|-------------|
 | `NINJAONE_CLIENT_ID` | Yes | OAuth 2.0 Client ID |
 | `NINJAONE_CLIENT_SECRET` | Yes | OAuth 2.0 Client Secret |
-| `NINJAONE_REGION` | No | Region: `us` (default), `eu`, or `oc` |
+| `NINJAONE_REGION` | No | Region: `us` (default), `eu`, `oc`, `ca`, `us2`, or `fed` |
+| `NINJAONE_SCOPES` | No | OAuth scopes to request. Defaults to `monitoring,management`. Set this if your API app is granted a narrower set — see [OAuth scopes](#oauth-scopes) |
 
 ### NinjaOne API Regions
 
@@ -85,6 +86,9 @@ Set the following environment variables:
 | `us` | `https://app.ninjarmm.com` |
 | `eu` | `https://eu.ninjarmm.com` |
 | `oc` | `https://oc.ninjarmm.com` |
+| `ca` | `https://ca.ninjarmm.com` |
+| `us2` | `https://us2.ninjarmm.com` |
+| `fed` | `https://fed.ninjarmm.com` |
 
 ## Usage
 
@@ -227,11 +231,37 @@ NinjaOne uses OAuth 2.0 for authentication. You need to:
 
 1. Log in to your NinjaOne dashboard
 2. Go to Administration > Apps > API
-3. Create a new API application
-4. Note the Client ID and Client Secret
-5. Configure the environment variables
+3. Create a new API application (application platform: **API Services**, grant type **Client Credentials**)
+4. Grant it the scopes you need — see below
+5. Note the Client ID and Client Secret
+6. Configure the environment variables
 
 The client library handles token refresh automatically.
+
+### OAuth scopes
+
+By default the server requests `monitoring management`. Which scopes you actually
+need depends on what you use:
+
+| Scope | Needed for |
+|-------|-----------|
+| `monitoring` | All read operations — listing devices, organizations, alerts, and tickets |
+| `management` | Write operations — rebooting devices, resetting alerts, creating/updating tickets and organizations |
+| `control` | Not used by this server |
+
+**If your API app is granted fewer scopes than the default, set `NINJAONE_SCOPES`
+to match.** NinjaOne rejects a token request that asks for a scope the app was
+never granted — it returns `400 invalid_scope` rather than narrowing the grant —
+so the failure happens at the token exchange and *every* tool call fails, including
+reads. For a monitoring-only app:
+
+```bash
+export NINJAONE_SCOPES="monitoring"
+```
+
+Values may be comma- or space-separated and are case-insensitive. In gateway
+deployments the same value can be supplied per request via the `X-Ninja-Scopes`
+header.
 
 ## License
 

@@ -16,14 +16,15 @@
     "mcp_config": {
       "command": "node",
       "args": ["${__dirname}/dist/index.js"],
-      "env": { "NINJAONE_CLIENT_ID": "${user_config.ninjaone_client_id}", "NINJAONE_CLIENT_SECRET": "${user_config.ninjaone_client_secret}", "NINJAONE_REGION": "${user_config.ninjaone_region}", "MCP_TRANSPORT": "stdio" }
+      "env": { "NINJAONE_CLIENT_ID": "${user_config.ninjaone_client_id}", "NINJAONE_CLIENT_SECRET": "${user_config.ninjaone_client_secret}", "NINJAONE_REGION": "${user_config.ninjaone_region}", "NINJAONE_SCOPES": "${user_config.ninjaone_scopes}", "MCP_TRANSPORT": "stdio" }
     }
   },
   "tools_generated": true,
   "user_config": {
     "ninjaone_client_id": { "type": "string", "title": "NinjaOne Client ID", "description": "Your NinjaOne OAuth client ID", "sensitive": true, "required": true },
     "ninjaone_client_secret": { "type": "string", "title": "NinjaOne Client Secret", "description": "Your NinjaOne OAuth client secret", "sensitive": true, "required": true },
-    "ninjaone_region": { "type": "string", "title": "NinjaOne Region", "description": "Region: us, eu, oc, ca, us2, or fed (default: us)", "sensitive": false, "required": false }
+    "ninjaone_region": { "type": "string", "title": "NinjaOne Region", "description": "Region: us, eu, oc, ca, us2, or fed (default: us)", "sensitive": false, "required": false },
+    "ninjaone_scopes": { "type": "string", "title": "NinjaOne OAuth Scopes", "description": "Scopes to request (default: monitoring,management). Set to just 'monitoring' if your API app is not granted management, otherwise the token request fails with 400 invalid_scope.", "sensitive": false, "required": false }
   },
   "compatibility": { "platforms": ["darwin", "win32", "linux"], "runtimes": { "node": ">=18.0.0" }, "claude_desktop": ">=0.10.0" }
 }
