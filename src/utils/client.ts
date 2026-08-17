@@ -16,7 +16,14 @@
  */
 import { NinjaOneClient } from "@wyre-technology/node-ninjaone";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { isValidRegion, getBaseUrlForRegion, type NinjaOneRegion } from "./types.js";
+import {
+  isValidRegion,
+  getBaseUrlForRegion,
+  parseScopes,
+  CONFIG_PLACEHOLDER,
+  type NinjaOneRegion,
+  type NinjaOneScope,
+} from "./types.js";
 import { logger } from "./logger.js";
 
 export interface NinjaOneCredentials {
@@ -24,14 +31,13 @@ export interface NinjaOneCredentials {
   clientSecret: string;
   region: NinjaOneRegion;
   baseUrl: string;
+  /**
+   * OAuth scopes to request. Omitted means "not configured" — the SDK's own
+   * default (monitoring + management) applies. Set this when the API Services
+   * app is granted a narrower set, or the token request 400s.
+   */
+  scopes?: NinjaOneScope[];
 }
-
-/**
- * Matches an unresolved MCPB/DXT config placeholder, e.g. "${user_config.ninjaone_region}".
- * When an optional user_config field is left blank, Claude Desktop injects the literal
- * placeholder string (not empty, not omitted) into the env var. Treat it as unset.
- */
-const CONFIG_PLACEHOLDER = /^\$\{.*\}$/;
 
 let _client: NinjaOneClient | null = null;
 let _credentials: NinjaOneCredentials | null = null;
@@ -59,6 +65,9 @@ export async function createClientDirect(
     clientId: creds.clientId,
     clientSecret: creds.clientSecret,
     baseUrl: creds.baseUrl,
+    // Passing `undefined` leaves the SDK default intact; passing `[]` would
+    // send an empty `scope` parameter, which is a different request.
+    ...(creds.scopes ? { scopes: creds.scopes } : {}),
   });
 }
 
@@ -98,8 +107,9 @@ export function getCredentials(): NinjaOneCredentials | null {
 
   const region = isValidRegion(regionEnv) ? regionEnv : "us";
   const baseUrl = getBaseUrlForRegion(region);
+  const scopes = parseScopes(process.env.NINJAONE_SCOPES);
 
-  return { clientId, clientSecret, region, baseUrl };
+  return { clientId, clientSecret, region, baseUrl, scopes };
 }
 
 /**
@@ -128,7 +138,8 @@ export async function getClient(): Promise<NinjaOneClient> {
     _credentials &&
     (creds.clientId !== _credentials.clientId ||
       creds.clientSecret !== _credentials.clientSecret ||
-      creds.region !== _credentials.region)
+      creds.region !== _credentials.region ||
+      (creds.scopes ?? []).join(" ") !== (_credentials.scopes ?? []).join(" "))
   ) {
     logger.info("Credentials changed, recreating client");
     _client = null;
@@ -136,11 +147,16 @@ export async function getClient(): Promise<NinjaOneClient> {
 
   if (!_client) {
     try {
-      logger.info("Creating NinjaOne client", { region: creds.region, baseUrl: creds.baseUrl });
+      logger.info("Creating NinjaOne client", {
+        region: creds.region,
+        baseUrl: creds.baseUrl,
+        scopes: creds.scopes ?? "sdk default (monitoring, management)",
+      });
       _client = new NinjaOneClient({
         clientId: creds.clientId,
         clientSecret: creds.clientSecret,
         baseUrl: creds.baseUrl,
+        ...(creds.scopes ? { scopes: creds.scopes } : {}),
       });
       _credentials = creds;
     } catch (error) {

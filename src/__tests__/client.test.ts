@@ -22,7 +22,12 @@ import * as clientModule from "../utils/client.js";
 // with the auto-reset.
 const { NinjaOneClientMock, constructedConfigs } = vi.hoisted(() => ({
   NinjaOneClientMock: vi.fn(),
-  constructedConfigs: [] as { clientId: string; clientSecret: string; baseUrl: string }[],
+  constructedConfigs: [] as {
+    clientId: string;
+    clientSecret: string;
+    baseUrl: string;
+    scopes?: string[];
+  }[],
 }));
 
 // Mock the node-ninjaone library
@@ -43,6 +48,7 @@ describe("NinjaOne Client Utilities", () => {
       clientId: string;
       clientSecret: string;
       baseUrl: string;
+      scopes?: string[];
     }) {
       constructedConfigs.push(config);
       return {
@@ -218,6 +224,30 @@ describe("NinjaOne Client Utilities", () => {
         baseUrl: "https://eu.ninjarmm.com",
       });
     });
+
+    it("leaves scopes unset when NINJAONE_SCOPES is not configured", () => {
+      process.env.NINJAONE_CLIENT_ID = "test-id";
+      process.env.NINJAONE_CLIENT_SECRET = "test-secret";
+      delete process.env.NINJAONE_SCOPES;
+
+      expect(getCredentials()?.scopes).toBeUndefined();
+    });
+
+    it("reads NINJAONE_SCOPES so a monitoring-only app can be expressed", () => {
+      process.env.NINJAONE_CLIENT_ID = "test-id";
+      process.env.NINJAONE_CLIENT_SECRET = "test-secret";
+      process.env.NINJAONE_SCOPES = "monitoring";
+
+      expect(getCredentials()?.scopes).toEqual(["monitoring"]);
+    });
+
+    it("ignores an unparseable NINJAONE_SCOPES rather than failing to start", () => {
+      process.env.NINJAONE_CLIENT_ID = "test-id";
+      process.env.NINJAONE_CLIENT_SECRET = "test-secret";
+      process.env.NINJAONE_SCOPES = "bogus";
+
+      expect(getCredentials()?.scopes).toBeUndefined();
+    });
   });
 
   describe("getClient", () => {
@@ -253,6 +283,58 @@ describe("NinjaOne Client Utilities", () => {
       const client2 = await getClient();
 
       expect(client1).toBe(client2);
+    });
+
+    // Regression: the server never passed `scopes`, so the SDK default of
+    // ["monitoring", "management"] was always requested. An API app granted
+    // monitoring only then failed the client_credentials exchange outright
+    // (400 invalid_scope) and EVERY tool call died at the token step.
+    it("forwards configured scopes to the SDK constructor", async () => {
+      process.env.NINJAONE_CLIENT_ID = "test-id";
+      process.env.NINJAONE_CLIENT_SECRET = "test-secret";
+      process.env.NINJAONE_SCOPES = "monitoring";
+
+      await getClient();
+
+      expect(constructedConfigs.at(-1)?.scopes).toEqual(["monitoring"]);
+    });
+
+    it("omits scopes entirely when unconfigured, preserving the SDK default", async () => {
+      process.env.NINJAONE_CLIENT_ID = "test-id";
+      process.env.NINJAONE_CLIENT_SECRET = "test-secret";
+      delete process.env.NINJAONE_SCOPES;
+
+      await getClient();
+
+      expect(constructedConfigs.at(-1)?.scopes).toBeUndefined();
+    });
+
+    it("rebuilds the cached client when only the scopes change", async () => {
+      process.env.NINJAONE_CLIENT_ID = "test-id";
+      process.env.NINJAONE_CLIENT_SECRET = "test-secret";
+      process.env.NINJAONE_SCOPES = "monitoring";
+      const client1 = await getClient();
+
+      process.env.NINJAONE_SCOPES = "monitoring,management";
+      const client2 = await getClient();
+
+      expect(client1).not.toBe(client2);
+      expect(constructedConfigs.at(-1)?.scopes).toEqual(["monitoring", "management"]);
+    });
+
+    it("forwards gateway-supplied scopes without touching the env-mode cache", async () => {
+      const gatewayClient = (await runWithCredentials(
+        {
+          clientId: "gateway-id",
+          clientSecret: "gateway-secret",
+          region: "eu" as const,
+          baseUrl: "https://eu.ninjarmm.com",
+          scopes: ["monitoring"],
+        },
+        () => getClient()
+      )) as unknown as { config: { scopes?: string[] } };
+
+      expect(gatewayClient.config.scopes).toEqual(["monitoring"]);
     });
 
     it("should create new client when credentials change", async () => {

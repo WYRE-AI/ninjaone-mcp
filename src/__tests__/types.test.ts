@@ -7,6 +7,7 @@ import {
   isDomainName,
   isValidRegion,
   getBaseUrlForRegion,
+  parseScopes,
 } from "../utils/types.js";
 
 describe("Type Utilities", () => {
@@ -68,6 +69,50 @@ describe("Type Utilities", () => {
 
     it("should return correct URL for FED region", () => {
       expect(getBaseUrlForRegion("fed")).toBe("https://fed.ninjarmm.com");
+    });
+  });
+
+  describe("parseScopes", () => {
+    it("returns undefined when unset, blank, or an unresolved config placeholder", () => {
+      // undefined means "caller did not choose" — the SDK default applies.
+      expect(parseScopes(undefined)).toBeUndefined();
+      expect(parseScopes("")).toBeUndefined();
+      expect(parseScopes("   ")).toBeUndefined();
+      expect(parseScopes("${user_config.ninjaone_scopes}")).toBeUndefined();
+    });
+
+    it("parses a single scope — the monitoring-only case that used to 400", () => {
+      expect(parseScopes("monitoring")).toEqual(["monitoring"]);
+    });
+
+    it("accepts comma- or space-separated lists", () => {
+      expect(parseScopes("monitoring,management")).toEqual(["monitoring", "management"]);
+      expect(parseScopes("monitoring management")).toEqual(["monitoring", "management"]);
+      expect(parseScopes("monitoring, management control")).toEqual([
+        "monitoring",
+        "management",
+        "control",
+      ]);
+    });
+
+    it("is case- and whitespace-insensitive", () => {
+      expect(parseScopes("  MONITORING , Control ")).toEqual(["monitoring", "control"]);
+    });
+
+    it("de-duplicates repeated scopes", () => {
+      expect(parseScopes("monitoring,monitoring,management")).toEqual([
+        "monitoring",
+        "management",
+      ]);
+    });
+
+    it("drops unrecognized scopes but keeps the valid ones", () => {
+      expect(parseScopes("monitoring,bogus")).toEqual(["monitoring"]);
+    });
+
+    it("returns undefined when nothing valid remains, falling back to the default", () => {
+      expect(parseScopes("bogus")).toBeUndefined();
+      expect(parseScopes("bogus,nonsense")).toBeUndefined();
     });
   });
 });

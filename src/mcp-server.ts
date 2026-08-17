@@ -17,6 +17,7 @@ import {
   isDomainName,
   isValidRegion,
   getBaseUrlForRegion,
+  parseScopes,
   type CallToolResult,
 } from "./utils/types.js";
 import {
@@ -102,6 +103,47 @@ const statusTool: Tool = {
 };
 
 /**
+ * Render a thrown error as the text a tool call reports back.
+ *
+ * The SDK's error classes carry the upstream response body on `.response`, but
+ * only `.message` used to be surfaced — so an OAuth failure read as a bare
+ * "Failed to acquire token: 400 Bad Request" with no reason attached. The body
+ * is where `invalid_scope` lives, and that one word is the whole diagnosis.
+ */
+export function formatToolError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+
+  const raw = (error as { response?: unknown } | null)?.response;
+  const body =
+    typeof raw === "string" ? raw : raw != null ? safeStringify(raw) : undefined;
+
+  const parts = [`Error: ${message}`];
+  if (body && !message.includes(body)) {
+    parts.push(body);
+  }
+
+  // An invalid_scope rejection is fully self-inflicted and fully fixable, so
+  // say how rather than leaving the operator to infer it from an OAuth code.
+  if (body?.includes("invalid_scope")) {
+    parts.push(
+      "The API Services app does not grant every requested OAuth scope. Set NINJAONE_SCOPES " +
+        "to the scopes it actually has (e.g. NINJAONE_SCOPES=monitoring), or grant the missing " +
+        "scope in NinjaOne under Administration > Apps > API."
+    );
+  }
+
+  return parts.join("\n");
+}
+
+function safeStringify(value: unknown): string | undefined {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Build a validated NinjaOneCredentials object from raw values.
  * Returns `{ creds }` on success or `{ error }` when client id/secret are missing.
  * Shared by every transport (Node HTTP headers, Workers headers, Workers env).
@@ -109,7 +151,8 @@ const statusTool: Tool = {
 export function buildCredentials(
   clientId: string | undefined,
   clientSecret: string | undefined,
-  region: string | undefined
+  region: string | undefined,
+  scopes?: string | undefined
 ): { creds?: NinjaOneCredentials; error?: string } {
   if (!clientId || !clientSecret) {
     return {
@@ -126,6 +169,7 @@ export function buildCredentials(
       clientSecret,
       region: validRegion,
       baseUrl: getBaseUrlForRegion(validRegion),
+      scopes: parseScopes(scopes ?? process.env.NINJAONE_SCOPES),
     },
   };
 }
@@ -143,7 +187,8 @@ export function resolveGatewayCredentials(
   return buildCredentials(
     getHeader("x-ninja-client-id"),
     getHeader("x-ninja-client-secret"),
-    getHeader("x-ninja-region")
+    getHeader("x-ninja-region"),
+    getHeader("x-ninja-scopes")
   );
 }
 
@@ -328,7 +373,7 @@ export async function createMcpServer(
         const stack = error instanceof Error ? error.stack : undefined;
         logger.error("Tool call failed", { tool: name, error: message, stack });
         return {
-          content: [{ type: "text", text: `Error: ${message}` }],
+          content: [{ type: "text", text: formatToolError(error) }],
           isError: true,
         };
       }
