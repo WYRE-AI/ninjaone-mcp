@@ -22,7 +22,7 @@ jobs:
       packages: write
       id-token: write
       security-events: write
-    uses: wyre-technology/.github/.github/workflows/mcp-server-release.yml@8deff2993e933c45856861cb3491d251361a5a8a
+    uses: wyre-technology/.github/.github/workflows/mcp-server-release.yml@8bfc9b3a249fd1e6f69f1d05c45c8eaf3076fec3
     with:
       server-name: ninjaone-mcp
       image-name: ghcr.io/wyre-technology/ninjaone-mcp
