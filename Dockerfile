@@ -52,9 +52,14 @@ USER ninjaone
 # Expose port for HTTP transport
 EXPOSE 8080
 
-# Health check against the HTTP endpoint
+# Health check against the HTTP endpoint. Use 127.0.0.1, not localhost: inside
+# the container localhost resolves to ::1 (IPv6), but the server binds
+# MCP_HTTP_HOST=0.0.0.0 (IPv4-only), so an IPv6 probe gets connection refused
+# and the container reports unhealthy forever even though the endpoint is
+# fine. Read the port from MCP_HTTP_PORT so a non-default port doesn't hit
+# the same failure mode.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider "http://127.0.0.1:${MCP_HTTP_PORT:-8080}/health" || exit 1
 
 # Set environment variables
 ENV NODE_ENV=production

@@ -23,6 +23,7 @@ import {
 import {
   getCredentials,
   runWithCredentials,
+  formatToolError,
   type NinjaOneCredentials,
 } from "./utils/client.js";
 import { logger } from "./utils/logger.js";
@@ -101,47 +102,6 @@ const statusTool: Tool = {
     properties: {},
   },
 };
-
-/**
- * Render a thrown error as the text a tool call reports back.
- *
- * The SDK's error classes carry the upstream response body on `.response`, but
- * only `.message` used to be surfaced — so an OAuth failure read as a bare
- * "Failed to acquire token: 400 Bad Request" with no reason attached. The body
- * is where `invalid_scope` lives, and that one word is the whole diagnosis.
- */
-export function formatToolError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-
-  const raw = (error as { response?: unknown } | null)?.response;
-  const body =
-    typeof raw === "string" ? raw : raw != null ? safeStringify(raw) : undefined;
-
-  const parts = [`Error: ${message}`];
-  if (body && !message.includes(body)) {
-    parts.push(body);
-  }
-
-  // An invalid_scope rejection is fully self-inflicted and fully fixable, so
-  // say how rather than leaving the operator to infer it from an OAuth code.
-  if (body?.includes("invalid_scope")) {
-    parts.push(
-      "The API Services app does not grant every requested OAuth scope. Set NINJAONE_SCOPES " +
-        "to the scopes it actually has (e.g. NINJAONE_SCOPES=monitoring), or grant the missing " +
-        "scope in NinjaOne under Administration > Apps > API."
-    );
-  }
-
-  return parts.join("\n");
-}
-
-function safeStringify(value: unknown): string | undefined {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * Build a validated NinjaOneCredentials object from raw values.

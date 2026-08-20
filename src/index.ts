@@ -35,6 +35,7 @@ import {
   makeMcpServerFactory,
   resolveGatewayCredentials,
 } from "./mcp-server.js";
+import { preflightAuthCheck } from "./utils/client.js";
 import { logger } from "./utils/logger.js";
 import { verifyS2sHeader, S2S_HEADER } from "./s2s-verify.js";
 
@@ -65,6 +66,26 @@ async function startHttpTransport(): Promise<void> {
   const port = parseInt(process.env.MCP_HTTP_PORT || "8080", 10);
   const host = process.env.MCP_HTTP_HOST || "0.0.0.0";
   const isGatewayMode = process.env.AUTH_MODE === "gateway";
+
+  // A scope mismatch (or any other OAuth-level rejection) is otherwise silent
+  // at boot and fatal on the token exchange behind *every* tool call — "all
+  // the tools mysteriously error", diagnosable only by reading a single
+  // tool's error body. This turns that into "server won't start, here's why"
+  // in the container logs. env mode only: gateway mode has no static
+  // credentials to check at startup, they only arrive per-request via
+  // headers (same reasoning as the /health handler below never calling
+  // getCredentials()).
+  if (!isGatewayMode) {
+    const preflight = await preflightAuthCheck();
+    if (preflight.error) {
+      // Propagates to main().catch() below, which logs and exits(1) — the
+      // same fatal-startup handling every other boot-time failure gets.
+      throw new Error(preflight.error);
+    }
+    if (preflight.checked) {
+      logger.info("Preflight authentication check passed");
+    }
+  }
 
   // legacy: 'stateless' (also the default) is the dual-era posture: 2025-era
   // traffic is answered per-request statelessly, modern 2026-07-28 envelope

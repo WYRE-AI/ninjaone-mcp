@@ -8,6 +8,7 @@ import {
   getClient,
   clearClient,
   runWithCredentials,
+  preflightAuthCheck,
 } from "../utils/client.js";
 import * as clientModule from "../utils/client.js";
 
@@ -395,6 +396,53 @@ describe("NinjaOne Client Utilities", () => {
       expect(constructedConfigs).toHaveLength(2);
       expect(constructedConfigs[0]).toMatchObject({ clientId: "test-id" });
       expect(constructedConfigs[1]).toMatchObject({ clientId: "test-id" });
+    });
+  });
+
+  // Regression: a scope mismatch was fatal at the token exchange behind
+  // every tool call, but silent at boot — "all the tools mysteriously
+  // error" with no indication why until you read one tool's error body.
+  // preflightAuthCheck() makes one cheap authenticated call at startup so
+  // that failure surfaces once, loudly, with the upstream body attached.
+  describe("preflightAuthCheck", () => {
+    it("skips the check (not checked) when no credentials are configured", async () => {
+      delete process.env.NINJAONE_CLIENT_ID;
+      delete process.env.NINJAONE_CLIENT_SECRET;
+
+      await expect(preflightAuthCheck()).resolves.toEqual({ checked: false });
+    });
+
+    it("passes (checked, no error) when the token exchange succeeds", async () => {
+      process.env.NINJAONE_CLIENT_ID = "test-id";
+      process.env.NINJAONE_CLIENT_SECRET = "test-secret";
+      process.env.NINJAONE_REGION = "us";
+
+      const client = (await getClient()) as unknown as {
+        organizations: { list: ReturnType<typeof vi.fn> };
+      };
+      client.organizations.list.mockResolvedValueOnce([]);
+
+      await expect(preflightAuthCheck()).resolves.toEqual({ checked: true });
+      expect(client.organizations.list).toHaveBeenCalledWith({ pageSize: 1 });
+    });
+
+    it("fails with the upstream body when the token exchange is rejected", async () => {
+      process.env.NINJAONE_CLIENT_ID = "test-id";
+      process.env.NINJAONE_CLIENT_SECRET = "test-secret";
+      process.env.NINJAONE_SCOPES = "monitoring,management";
+
+      const client = (await getClient()) as unknown as {
+        organizations: { list: ReturnType<typeof vi.fn> };
+      };
+      const authError = new Error("Failed to acquire token: 400 Bad Request");
+      (authError as unknown as { response: string }).response = '{"error":"invalid_scope"}';
+      client.organizations.list.mockRejectedValueOnce(authError);
+
+      const result = await preflightAuthCheck();
+      expect(result.checked).toBe(true);
+      expect(result.error).toContain("Failed to acquire token: 400 Bad Request");
+      expect(result.error).toContain("invalid_scope");
+      expect(result.error).toContain("NINJAONE_SCOPES");
     });
   });
 

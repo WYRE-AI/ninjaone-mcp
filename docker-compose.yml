@@ -29,9 +29,11 @@ services:
       # Mount logs directory for persistence
       - ninjaone-mcp-logs:/app/logs
 
-    # Health check
+    # Health check. 127.0.0.1, not localhost (resolves to ::1 in-container,
+    # which the IPv4-only MCP_HTTP_HOST=0.0.0.0 bind refuses); port comes from
+    # MCP_HTTP_PORT so overriding it doesn't strand the healthcheck on 8080.
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:${MCP_HTTP_PORT:-8080}/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
