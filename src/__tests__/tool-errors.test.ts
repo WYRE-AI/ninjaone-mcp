@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { formatToolError } from "../mcp-server.js";
+import { formatToolError } from "../utils/client.js";
 
 class FakeNinjaOneError extends Error {
   readonly statusCode: number;

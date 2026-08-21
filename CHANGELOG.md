@@ -20,6 +20,23 @@
   `Failed to acquire token: 400 Bad Request` with the one diagnostic word —
   `invalid_scope` — thrown away. The body is now appended, and an
   `invalid_scope` rejection additionally explains how to fix it.
+- **A bad token exchange (scope mismatch, revoked credentials, etc.) surfaced
+  on every tool call instead of at boot.** The HTTP transport now makes one
+  authenticated request at startup (env mode only — gateway mode has no static
+  credentials to check until a request supplies them via headers) and exits
+  loudly with the upstream response body if it fails, so a misconfigured
+  deployment reads as "server won't start, here's why" in the container logs
+  instead of "every tool mysteriously errors."
+- **The Docker healthcheck has never passed for IPv4-only deployments.** It
+  probed `http://localhost:8080/health`, but inside the container `localhost`
+  resolves to `::1` while the server binds `MCP_HTTP_HOST=0.0.0.0`
+  (IPv4-only), so `wget` got connection refused and the container reported
+  unhealthy indefinitely even though the endpoint itself was fine — breaking
+  `depends_on: condition: service_healthy` for anyone sequencing startup on
+  it. The probe also hardcoded port 8080 while `MCP_HTTP_PORT` is
+  configurable, so changing the port landed in the same permanently-unhealthy
+  state. Both the Dockerfile `HEALTHCHECK` and `docker-compose.yml` now probe
+  `127.0.0.1` on `$MCP_HTTP_PORT` (default `8080`).
 
 ### Security
 
