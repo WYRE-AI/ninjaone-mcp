@@ -5,9 +5,9 @@
   "version": "0.0.0",
   "description": "MCP server for NinjaOne RMM - access devices, organizations, tickets, and alerts through AI assistants",
   "long_description": "Provides AI assistants with structured access to your NinjaOne RMM data. Manage devices, organizations, tickets, alerts, and software inventory through the Model Context Protocol.",
-  "author": { "name": "Wyre Technology", "url": "https://github.com/wyre-technology" },
-  "repository": { "type": "git", "url": "https://github.com/wyre-technology/ninjaone-mcp" },
-  "homepage": "https://github.com/wyre-technology/ninjaone-mcp",
+  "author": { "name": "Wyre Technology", "url": "https://github.com/WYRE-AI" },
+  "repository": { "type": "git", "url": "https://github.com/WYRE-AI/ninjaone-mcp" },
+  "homepage": "https://github.com/WYRE-AI/ninjaone-mcp",
   "license": "Apache-2.0",
   "keywords": ["ninjaone", "rmm", "msp", "devices", "it-management"],
   "server": {

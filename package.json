@@ -1,5 +1,5 @@
 {
-  "name": "@wyre-technology/ninjaone-mcp",
+  "name": "@wyre-ai/ninjaone-mcp",
   "version": "1.4.3",
   "description": "NinjaOne MCP server with decision tree architecture for Claude",
   "type": "module",
@@ -28,7 +28,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wyre-technology/ninjaone-mcp.git"
+    "url": "git+https://github.com/WYRE-AI/ninjaone-mcp.git"
   },
   "keywords": [
     "mcp",
@@ -42,9 +42,9 @@
   "author": "Wyre Technology",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/wyre-technology/ninjaone-mcp/issues"
+    "url": "https://github.com/WYRE-AI/ninjaone-mcp/issues"
   },
-  "homepage": "https://github.com/wyre-technology/ninjaone-mcp#readme",
+  "homepage": "https://github.com/WYRE-AI/ninjaone-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/node": "^2.0.0-beta.5",
     "@modelcontextprotocol/server": "^2.0.0-beta.5",

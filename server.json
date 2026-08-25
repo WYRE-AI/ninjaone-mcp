@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.wyre-technology/ninjaone-mcp",
+  "name": "io.github.WYRE-AI/ninjaone-mcp",
   "title": "NinjaOne",
   "description": "MCP server for NinjaOne RMM — devices, organizations, alerts, and tickets.",
   "repository": {
-    "url": "https://github.com/wyre-technology/ninjaone-mcp",
+    "url": "https://github.com/WYRE-AI/ninjaone-mcp",
     "source": "github"
   },
   "version": "0.0.0",
-  "websiteUrl": "https://github.com/wyre-technology/ninjaone-mcp",
+  "websiteUrl": "https://github.com/WYRE-AI/ninjaone-mcp",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/wyre-technology/ninjaone-mcp:0.0.0",
+      "identifier": "ghcr.io/wyre-ai/ninjaone-mcp:0.0.0",
       "transport": {
         "type": "stdio"
       },
