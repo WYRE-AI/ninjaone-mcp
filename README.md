@@ -22,9 +22,9 @@ A Model Context Protocol (MCP) server for interacting with NinjaOne, featuring a
 >    - **DigitalOcean App Platform** → set an encrypted env var named **`GITHUB_TOKEN`**
 >      with scope **Build Time** to your PAT (the `.do/app.yaml` already declares it).
 
-[![Deploy to DO](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/wyre-technology/ninjaone-mcp/tree/main)
+[![Deploy to DO](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/WYRE-AI/ninjaone-mcp/tree/main)
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/wyre-technology/ninjaone-mcp)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/WYRE-AI/ninjaone-mcp)
 
 > [!NOTE]
 > Both targets run the **full** MCP server. DigitalOcean builds the Docker image and
@@ -59,14 +59,14 @@ token even for public packages. Authenticate once, then install:
 # Authenticate npm to GitHub Packages (token needs the read:packages scope)
 export NODE_AUTH_TOKEN=$(gh auth token)   # or a PAT with read:packages
 
-npm install @wyre-technology/ninjaone-mcp
+npm install @wyre-ai/ninjaone-mcp
 ```
 
 The repo's `.npmrc` already points the `@wyre-technology` scope at GitHub Packages and
 reads the token from `NODE_AUTH_TOKEN`, so no further config is needed. The same applies
-to `npx @wyre-technology/ninjaone-mcp` below. Prefer a zero-setup option? Use the prebuilt
-container image (`ghcr.io/wyre-technology/ninjaone-mcp`) or the `.mcpb` bundle attached to
-each [release](https://github.com/wyre-technology/ninjaone-mcp/releases).
+to `npx @wyre-ai/ninjaone-mcp` below. Prefer a zero-setup option? Use the prebuilt
+container image (`ghcr.io/wyre-ai/ninjaone-mcp`) or the `.mcpb` bundle attached to
+each [release](https://github.com/WYRE-AI/ninjaone-mcp/releases).
 
 ## Configuration
 
@@ -101,7 +101,7 @@ export NINJAONE_CLIENT_SECRET="your-client-secret"
 export NINJAONE_REGION="us"
 
 # Run the server
-npx @wyre-technology/ninjaone-mcp
+npx @wyre-ai/ninjaone-mcp
 ```
 
 ### Claude Desktop Configuration
@@ -113,7 +113,7 @@ Add to your Claude Desktop `claude_desktop_config.json`:
   "mcpServers": {
     "ninjaone": {
       "command": "npx",
-      "args": ["@wyre-technology/ninjaone-mcp"],
+      "args": ["@wyre-ai/ninjaone-mcp"],
       "env": {
         "NINJAONE_CLIENT_ID": "your-client-id",
         "NINJAONE_CLIENT_SECRET": "your-client-secret",

@@ -3,7 +3,7 @@ spec:
   services:
     - name: ninjaone-mcp
       github:
-        repo: wyre-technology/ninjaone-mcp
+        repo: WYRE-AI/ninjaone-mcp
         branch: main
         deploy_on_push: true
       dockerfile_path: Dockerfile
