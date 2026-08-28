@@ -294,7 +294,7 @@ export async function createMcpServer(
             content: [
               {
                 type: "text",
-                text: `NinjaOne MCP Server Status\n\nCredentials: ${credStatus}\nAvailable domains: ${getAvailableDomains().join(", ")}\n\nAll tools are available. Use ninjaone_navigate to discover tools by domain.`,
+                text: `NinjaOne MCP Server Status\n\nCredentials: ${credStatus}\nAvailable domains: ${getAvailableDomains().join(", ")}\n\nCall conduit__my_access to see which tools you can use under the gateway, or ninjaone_navigate to browse all tools by domain when running standalone.`,
               },
             ],
           };
@@ -323,7 +323,7 @@ export async function createMcpServer(
           content: [
             {
               type: "text",
-              text: `Unknown tool: ${name}. Use ninjaone_navigate to discover available tools by domain.`,
+              text: `Unknown tool: ${name}. Call conduit__my_access to see which tools you can use under the gateway, or ninjaone_navigate to browse available tools by domain when running standalone.`,
             },
           ],
           isError: true,
