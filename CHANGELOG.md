@@ -2,6 +2,15 @@
 
 ### Fixed
 
+- **`ninjaone_status` and the unknown-tool error advised calling
+  `ninjaone_navigate` to discover tools without qualification.** Conduit
+  suppresses `*_navigate` / `*_back` at the gateway (tier filtering lives in
+  the grant resolver, which the container cannot see) and replaces them with
+  `conduit__my_access`, so that advice pointed callers behind the gateway at
+  a tool that returns method-not-found. Both strings now point to
+  `conduit__my_access` for gateway callers and keep `ninjaone_navigate` as
+  the standalone-mode discovery path. The tool itself is unchanged.
+  (WYRE-AI/conduit#1236)
 - **A monitoring-only API app could not authenticate at all.** The server never
   passed an explicit scope list to the SDK, so every token request fell through
   to the SDK default of `["monitoring", "management"]` and asked for
