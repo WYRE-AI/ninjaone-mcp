@@ -22,7 +22,7 @@ jobs:
       packages: write
       id-token: write
       security-events: write
-    uses: WYRE-AI/.github/.github/workflows/mcp-server-release.yml@07bc1921cbd01ad8a079fe8a3dd28180080870d5
+    uses: WYRE-AI/.github/.github/workflows/mcp-server-release.yml@8c2360058e882a8afacfc4cebf840135789ef406
     with:
       server-name: ninjaone-mcp
       image-name: ghcr.io/wyre-ai/ninjaone-mcp
@@ -44,7 +44,7 @@ jobs:
   #   permissions:
   #     id-token: write
   #     contents: read
-  #   uses: WYRE-AI/.github/.github/workflows/mcp-server-deploy.yml@07bc1921cbd01ad8a079fe8a3dd28180080870d5
+  #   uses: WYRE-AI/.github/.github/workflows/mcp-server-deploy.yml@8c2360058e882a8afacfc4cebf840135789ef406
   #   with:
   #     vendor-slug: ninjaone
   #     image-name: ghcr.io/wyre-ai/ninjaone-mcp
