@@ -10,6 +10,8 @@ const {
   mockOrganizationsGet,
   mockOrganizationsCreate,
   mockOrganizationsGetLocations,
+  mockOrganizationsGetCustomFields,
+  mockOrganizationsUpdateCustomFields,
   mockDevicesListByOrganization,
   mockClient,
 } = vi.hoisted(() => {
@@ -17,6 +19,8 @@ const {
   const mockOrganizationsGet = vi.fn();
   const mockOrganizationsCreate = vi.fn();
   const mockOrganizationsGetLocations = vi.fn();
+  const mockOrganizationsGetCustomFields = vi.fn();
+  const mockOrganizationsUpdateCustomFields = vi.fn();
   const mockDevicesListByOrganization = vi.fn();
 
   const mockClient = {
@@ -25,6 +29,8 @@ const {
       get: mockOrganizationsGet,
       create: mockOrganizationsCreate,
       getLocations: mockOrganizationsGetLocations,
+      getCustomFields: mockOrganizationsGetCustomFields,
+      updateCustomFields: mockOrganizationsUpdateCustomFields,
     },
     devices: {
       listByOrganization: mockDevicesListByOrganization,
@@ -36,6 +42,8 @@ const {
     mockOrganizationsGet,
     mockOrganizationsCreate,
     mockOrganizationsGetLocations,
+    mockOrganizationsGetCustomFields,
+    mockOrganizationsUpdateCustomFields,
     mockDevicesListByOrganization,
     mockClient,
   };
@@ -63,6 +71,8 @@ describe("Organizations Domain Handler", () => {
     mockOrganizationsGet.mockClear();
     mockOrganizationsCreate.mockClear();
     mockOrganizationsGetLocations.mockClear();
+    mockOrganizationsGetCustomFields.mockClear();
+    mockOrganizationsUpdateCustomFields.mockClear();
     mockDevicesListByOrganization.mockClear();
 
     // Reset mock implementations - list returns Organization[] directly
@@ -90,13 +100,18 @@ describe("Organizations Domain Handler", () => {
       { id: 1, systemName: "Device 1" },
       { id: 2, systemName: "Device 2" },
     ]);
+    mockOrganizationsGetCustomFields.mockResolvedValue({
+      accountManager: "Jane Smith",
+      contractType: "Managed Services",
+    });
+    mockOrganizationsUpdateCustomFields.mockResolvedValue(undefined);
   });
 
   describe("getTools", () => {
     it("should return all organization tools", () => {
       const tools = organizationsHandler.getTools();
 
-      expect(tools.length).toBe(5);
+      expect(tools.length).toBe(7);
 
       const toolNames = tools.map((t) => t.name);
       expect(toolNames).toContain("ninjaone_organizations_list");
@@ -104,6 +119,8 @@ describe("Organizations Domain Handler", () => {
       expect(toolNames).toContain("ninjaone_organizations_create");
       expect(toolNames).toContain("ninjaone_organizations_locations");
       expect(toolNames).toContain("ninjaone_organizations_devices");
+      expect(toolNames).toContain("ninjaone_organizations_get_custom_fields");
+      expect(toolNames).toContain("ninjaone_organizations_update_custom_fields");
     });
 
     it("ninjaone_organizations_get should require organization_id", () => {
@@ -191,6 +208,38 @@ describe("Organizations Domain Handler", () => {
 
         const data = JSON.parse(result.content[0].text);
         expect(data).toHaveLength(2);
+      });
+    });
+
+    describe("ninjaone_organizations_get_custom_fields", () => {
+      it("should get organization custom fields", async () => {
+        const result = await organizationsHandler.handleCall(
+          "ninjaone_organizations_get_custom_fields",
+          { organization_id: 1 },
+        );
+
+        expect(result.isError).toBeUndefined();
+        expect(mockOrganizationsGetCustomFields).toHaveBeenCalledWith(1);
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.accountManager).toBe("Jane Smith");
+      });
+    });
+
+    describe("ninjaone_organizations_update_custom_fields", () => {
+      it("should update organization custom fields", async () => {
+        const result = await organizationsHandler.handleCall(
+          "ninjaone_organizations_update_custom_fields",
+          { organization_id: 1, fields: { accountManager: "John Doe" } },
+        );
+
+        expect(result.isError).toBeUndefined();
+        expect(mockOrganizationsUpdateCustomFields).toHaveBeenCalledWith(1, {
+          accountManager: "John Doe",
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.success).toBe(true);
       });
     });
 

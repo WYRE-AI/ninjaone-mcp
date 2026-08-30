@@ -99,6 +99,36 @@ function getTools(): Tool[] {
         required: ["organization_id"],
       },
     },
+    {
+      name: "ninjaone_organizations_get_custom_fields",
+      description: "Get organization custom fields",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          organization_id: {
+            type: "number",
+          },
+        },
+        required: ["organization_id"],
+      },
+    },
+    {
+      name: "ninjaone_organizations_update_custom_fields",
+      description: "Update organization custom fields",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          organization_id: {
+            type: "number",
+          },
+          fields: {
+            type: "object",
+            description: "Custom field name/value pairs to set",
+          },
+        },
+        required: ["organization_id", "fields"],
+      },
+    },
   ];
 }
 
@@ -181,6 +211,34 @@ async function handleCall(
 
       return {
         content: [{ type: "text", text: JSON.stringify(devices, null, 2) }],
+      };
+    }
+
+    case "ninjaone_organizations_get_custom_fields": {
+      const orgId = args.organization_id as number;
+      logger.info("API call: organizations.getCustomFields", { orgId });
+      const fields = await client.organizations.getCustomFields(orgId);
+      logger.debug("API response: organizations.getCustomFields", { fields });
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(fields, null, 2) }],
+      };
+    }
+
+    case "ninjaone_organizations_update_custom_fields": {
+      const orgId = args.organization_id as number;
+      const fields = args.fields as Record<string, unknown>;
+      logger.info("API call: organizations.updateCustomFields", { orgId });
+      await client.organizations.updateCustomFields(orgId, fields);
+      logger.debug("API response: organizations.updateCustomFields", { orgId, fields });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ success: true, message: "Custom fields updated" }, null, 2),
+          },
+        ],
       };
     }
 

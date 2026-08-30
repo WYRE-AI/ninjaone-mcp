@@ -5,7 +5,7 @@
  */
 import type { Tool } from "@modelcontextprotocol/server";
 import type { DomainHandler, CallToolResult } from "../utils/types.js";
-import type { TicketStatus, TicketPriority, TicketType } from "@wyre-technology/node-ninjaone";
+import type { TicketStatus, TicketPriority, TicketType } from "@wyre-ai/node-ninjaone";
 import { getClient } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
 

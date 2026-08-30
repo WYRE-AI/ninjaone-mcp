@@ -7,10 +7,10 @@
 # since those can carry behavioural breaking changes a green test suite misses.
 version: 2
 
-# @wyre-technology/* packages are hosted on GitHub Packages (npm.pkg.github.com),
+# @wyre-ai/* packages are hosted on GitHub Packages (npm.pkg.github.com),
 # which has no anonymous read. Without this, Dependabot's own version-resolution
 # job for the root npm group (the one that touches this repo's own
-# @wyre-technology/node-<vendor> dependency) fails with
+# @wyre-ai/node-<vendor> dependency) fails with
 # private_source_authentication_failure -- it can update every OTHER dependency
 # fine, just not this one. GHPKG_READ_TOKEN is an existing org-level Dependabot
 # secret (created 2026-06-05); this just wires it in. See task_1783631373373.

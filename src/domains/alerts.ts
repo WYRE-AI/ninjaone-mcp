@@ -5,7 +5,7 @@
  */
 import type { Tool } from "@modelcontextprotocol/server";
 import type { DomainHandler, CallToolResult } from "../utils/types.js";
-import type { Alert, AlertSeverity, AlertSourceType, NinjaOneClient } from "@wyre-technology/node-ninjaone";
+import type { Alert, AlertSeverity, AlertSourceType, NinjaOneClient } from "@wyre-ai/node-ninjaone";
 import { getClient } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
 import { elicitSelection } from "../utils/elicitation.js";

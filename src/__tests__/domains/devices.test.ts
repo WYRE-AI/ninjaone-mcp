@@ -13,6 +13,8 @@ const {
   mockDevicesGetServices,
   mockAlertsListByDevice,
   mockDevicesGetActivities,
+  mockDevicesGetCustomFields,
+  mockDevicesUpdateCustomFields,
   mockClient,
 } = vi.hoisted(() => {
   const mockDevicesList = vi.fn();
@@ -22,6 +24,8 @@ const {
   const mockDevicesGetServices = vi.fn();
   const mockAlertsListByDevice = vi.fn();
   const mockDevicesGetActivities = vi.fn();
+  const mockDevicesGetCustomFields = vi.fn();
+  const mockDevicesUpdateCustomFields = vi.fn();
 
   const mockClient = {
     devices: {
@@ -31,6 +35,8 @@ const {
       reboot: mockDevicesReboot,
       getServices: mockDevicesGetServices,
       getActivities: mockDevicesGetActivities,
+      getCustomFields: mockDevicesGetCustomFields,
+      updateCustomFields: mockDevicesUpdateCustomFields,
     },
     alerts: {
       listByDevice: mockAlertsListByDevice,
@@ -45,6 +51,8 @@ const {
     mockDevicesGetServices,
     mockAlertsListByDevice,
     mockDevicesGetActivities,
+    mockDevicesGetCustomFields,
+    mockDevicesUpdateCustomFields,
     mockClient,
   };
 });
@@ -74,6 +82,8 @@ describe("Devices Domain Handler", () => {
     mockDevicesGetServices.mockClear();
     mockAlertsListByDevice.mockClear();
     mockDevicesGetActivities.mockClear();
+    mockDevicesGetCustomFields.mockClear();
+    mockDevicesUpdateCustomFields.mockClear();
 
     // Reset mock implementations - list returns Device[] directly
     mockDevicesList.mockResolvedValue([
@@ -107,13 +117,18 @@ describe("Devices Domain Handler", () => {
         { id: 1, type: "LOGIN", timestamp: "2024-01-01T00:00:00Z" },
       ],
     });
+    mockDevicesGetCustomFields.mockResolvedValue({
+      assetTag: "AT-4821",
+      warrantyExpiration: "2027-06-30",
+    });
+    mockDevicesUpdateCustomFields.mockResolvedValue(undefined);
   });
 
   describe("getTools", () => {
     it("should return all device tools", () => {
       const tools = devicesHandler.getTools();
 
-      expect(tools.length).toBe(6);
+      expect(tools.length).toBe(8);
 
       const toolNames = tools.map((t) => t.name);
       expect(toolNames).toContain("ninjaone_devices_list");
@@ -122,6 +137,8 @@ describe("Devices Domain Handler", () => {
       expect(toolNames).toContain("ninjaone_devices_services");
       expect(toolNames).toContain("ninjaone_devices_alerts");
       expect(toolNames).toContain("ninjaone_devices_activities");
+      expect(toolNames).toContain("ninjaone_devices_get_custom_fields");
+      expect(toolNames).toContain("ninjaone_devices_update_custom_fields");
     });
 
     it("ninjaone_devices_get should require device_id", () => {
@@ -364,6 +381,35 @@ describe("Devices Domain Handler", () => {
 
         const data = JSON.parse(result.content[0].text);
         expect(data.activities).toHaveLength(1);
+      });
+    });
+
+    describe("ninjaone_devices_get_custom_fields", () => {
+      it("should get device custom fields", async () => {
+        const result = await devicesHandler.handleCall("ninjaone_devices_get_custom_fields", {
+          device_id: 1,
+        });
+
+        expect(result.isError).toBeUndefined();
+        expect(mockDevicesGetCustomFields).toHaveBeenCalledWith(1);
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.assetTag).toBe("AT-4821");
+      });
+    });
+
+    describe("ninjaone_devices_update_custom_fields", () => {
+      it("should update device custom fields", async () => {
+        const result = await devicesHandler.handleCall("ninjaone_devices_update_custom_fields", {
+          device_id: 1,
+          fields: { assetTag: "AT-9999" },
+        });
+
+        expect(result.isError).toBeUndefined();
+        expect(mockDevicesUpdateCustomFields).toHaveBeenCalledWith(1, { assetTag: "AT-9999" });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.success).toBe(true);
       });
     });
 
