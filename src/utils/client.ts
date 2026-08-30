@@ -14,7 +14,7 @@
  * silently fell through to the real SDK and made live HTTP calls). A
  * static import always resolves through the mocked binding.
  */
-import { NinjaOneClient } from "@wyre-technology/node-ninjaone";
+import { NinjaOneClient } from "@wyre-ai/node-ninjaone";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   isValidRegion,

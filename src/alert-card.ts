@@ -7,7 +7,7 @@
  * simply means the host renders no card while the JSON payload is unchanged.
  */
 
-import type { Alert } from "@wyre-technology/node-ninjaone";
+import type { Alert } from "@wyre-ai/node-ninjaone";
 
 export const ALERT_CARD_RESOURCE_URI = "ui://ninjaone/alert-card.html";
 

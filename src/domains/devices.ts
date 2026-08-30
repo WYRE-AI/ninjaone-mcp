@@ -4,7 +4,7 @@
  * Provides tools for device operations in NinjaOne.
  */
 import type { Tool } from "@modelcontextprotocol/server";
-import type { DeviceNodeClass } from "@wyre-technology/node-ninjaone";
+import type { DeviceNodeClass } from "@wyre-ai/node-ninjaone";
 import type { DomainHandler, CallToolResult } from "../utils/types.js";
 import { getClient } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
@@ -166,6 +166,36 @@ function getTools(): Tool[] {
           },
         },
         required: ["device_id"],
+      },
+    },
+    {
+      name: "ninjaone_devices_get_custom_fields",
+      description: "Get device custom fields",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          device_id: {
+            type: "number",
+          },
+        },
+        required: ["device_id"],
+      },
+    },
+    {
+      name: "ninjaone_devices_update_custom_fields",
+      description: "Update device custom fields",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          device_id: {
+            type: "number",
+          },
+          fields: {
+            type: "object",
+            description: "Custom field name/value pairs to set",
+          },
+        },
+        required: ["device_id", "fields"],
       },
     },
   ];
@@ -375,6 +405,34 @@ async function handleCall(
 
       return {
         content: [{ type: "text", text: JSON.stringify(activities, null, 2) }],
+      };
+    }
+
+    case "ninjaone_devices_get_custom_fields": {
+      const deviceId = args.device_id as number;
+      logger.info("API call: devices.getCustomFields", { deviceId });
+      const fields = await client.devices.getCustomFields(deviceId);
+      logger.debug("API response: devices.getCustomFields", { fields });
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(fields, null, 2) }],
+      };
+    }
+
+    case "ninjaone_devices_update_custom_fields": {
+      const deviceId = args.device_id as number;
+      const fields = args.fields as Record<string, unknown>;
+      logger.info("API call: devices.updateCustomFields", { deviceId });
+      await client.devices.updateCustomFields(deviceId, fields);
+      logger.debug("API response: devices.updateCustomFields", { deviceId, fields });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ success: true, message: "Custom fields updated" }, null, 2),
+          },
+        ],
       };
     }
 

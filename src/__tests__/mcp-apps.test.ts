@@ -29,9 +29,9 @@ const { mockAlertsGet, mockAlertsReset, mockDevicesGet, mockOrgsGet } = vi.hoist
   mockOrgsGet: vi.fn(),
 }));
 
-vi.mock("@wyre-technology/node-ninjaone", async (importOriginal) => {
+vi.mock("@wyre-ai/node-ninjaone", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("@wyre-technology/node-ninjaone")>();
+    await importOriginal<typeof import("@wyre-ai/node-ninjaone")>();
   return {
     ...actual,
     NinjaOneClient: class {

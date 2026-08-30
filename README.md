@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server for interacting with NinjaOne, featuring a
 ## One-Click Deployment
 
 > [!IMPORTANT]
-> **Before you click:** this server depends on `@wyre-technology/node-ninjaone`,
+> **Before you click:** this server depends on `@wyre-ai/node-ninjaone`,
 > which is hosted on the **GitHub Packages** npm registry. GitHub Packages has no
 > anonymous access — even though the package is public, every `npm install` needs a
 > token. The cloud builder runs `npm install` for you, so you must give it one, or
@@ -15,7 +15,7 @@ A Model Context Protocol (MCP) server for interacting with NinjaOne, featuring a
 > 1. Create a GitHub **Personal Access Token** with the `read:packages` scope
 >    ([classic token](https://github.com/settings/tokens/new?scopes=read:packages&description=ninjaone-mcp%20deploy)).
 >    Any GitHub account works — you do **not** need to be a member of the
->    `wyre-technology` org to read its public packages.
+>    `wyre-ai` org to read its public packages.
 > 2. Add it as a build variable when prompted by the deploy flow:
 >    - **Cloudflare Workers** → set a build variable named **`NODE_AUTH_TOKEN`** to your PAT
 >      (Workers → Settings → Build → Variables and Secrets).
@@ -62,7 +62,7 @@ export NODE_AUTH_TOKEN=$(gh auth token)   # or a PAT with read:packages
 npm install @wyre-ai/ninjaone-mcp
 ```
 
-The repo's `.npmrc` already points the `@wyre-technology` scope at GitHub Packages and
+The repo's `.npmrc` already points the `@wyre-ai` scope at GitHub Packages and
 reads the token from `NODE_AUTH_TOKEN`, so no further config is needed. The same applies
 to `npx @wyre-ai/ninjaone-mcp` below. Prefer a zero-setup option? Use the prebuilt
 container image (`ghcr.io/wyre-ai/ninjaone-mcp`) or the `.mcpb` bundle attached to
@@ -143,6 +143,8 @@ Tools:
 - `ninjaone_devices_services` - List Windows services on a device
 - `ninjaone_devices_alerts` - Get device-specific alerts
 - `ninjaone_devices_activities` - View device activity log
+- `ninjaone_devices_get_custom_fields` - Get device custom fields
+- `ninjaone_devices_update_custom_fields` - Update device custom fields
 
 ### Organizations
 Manage customer organizations and their resources.
@@ -153,6 +155,8 @@ Tools:
 - `ninjaone_organizations_create` - Create a new organization
 - `ninjaone_organizations_locations` - List organization locations
 - `ninjaone_organizations_devices` - List devices for an organization
+- `ninjaone_organizations_get_custom_fields` - Get organization custom fields
+- `ninjaone_organizations_update_custom_fields` - Update organization custom fields
 
 ### Alerts
 View and manage alerts across all devices.

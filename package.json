@@ -48,7 +48,7 @@
   "dependencies": {
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
-    "@wyre-technology/node-ninjaone": "^2.0.1"
+    "@wyre-ai/node-ninjaone": "^2.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
