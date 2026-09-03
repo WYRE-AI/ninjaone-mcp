@@ -8,7 +8,7 @@ on:
 
 # Thin caller for the canonical reusable release pipeline. The build →
 # semantic-release → Docker → MCP Registry → security chain (tag-based release
-# detection + correct gating) lives in WYRE-AI/.github so every *-mcp
+# detection + correct gating) lives in the public WYRE-AI/reusable-workflows repo so every *-mcp
 # repo stays in lockstep instead of drifting per-repo. PR-time lint/test gating
 # is each repo's ci.yml concern; this workflow only runs the release path.
 # Caller jobs grant the token scopes the reusable jobs request (a reusable can
@@ -22,7 +22,7 @@ jobs:
       packages: write
       id-token: write
       security-events: write
-    uses: WYRE-AI/.github/.github/workflows/mcp-server-release.yml@8c2360058e882a8afacfc4cebf840135789ef406
+    uses: WYRE-AI/reusable-workflows/.github/workflows/mcp-server-release.yml@2b0b056bd7544937e5cbd56cf2e1ff8a180a411f
     with:
       server-name: ninjaone-mcp
       image-name: ghcr.io/wyre-ai/ninjaone-mcp
@@ -44,7 +44,7 @@ jobs:
   #   permissions:
   #     id-token: write
   #     contents: read
-  #   uses: WYRE-AI/.github/.github/workflows/mcp-server-deploy.yml@8c2360058e882a8afacfc4cebf840135789ef406
+  #   uses: WYRE-AI/reusable-workflows/.github/workflows/mcp-server-deploy.yml@2b0b056bd7544937e5cbd56cf2e1ff8a180a411f
   #   with:
   #     vendor-slug: ninjaone
   #     image-name: ghcr.io/wyre-ai/ninjaone-mcp
