@@ -13,6 +13,9 @@ const {
   mockTicketsAddComment,
   mockTicketsGetComments,
   mockTicketsListBoards,
+  mockTicketsListForms,
+  mockTicketsGetForm,
+  mockHttpRequest,
   mockClient,
 } = vi.hoisted(() => {
   const mockTicketsList = vi.fn();
@@ -22,6 +25,9 @@ const {
   const mockTicketsAddComment = vi.fn();
   const mockTicketsGetComments = vi.fn();
   const mockTicketsListBoards = vi.fn();
+  const mockTicketsListForms = vi.fn();
+  const mockTicketsGetForm = vi.fn();
+  const mockHttpRequest = vi.fn();
 
   const mockClient = {
     tickets: {
@@ -32,7 +38,12 @@ const {
       addComment: mockTicketsAddComment,
       getComments: mockTicketsGetComments,
       listBoards: mockTicketsListBoards,
+      listForms: mockTicketsListForms,
+      getForm: mockTicketsGetForm,
     },
+    // The SDK marks httpClient TypeScript-private, not #private, so the
+    // documented endpoints it does not implement are reached through it.
+    httpClient: { request: mockHttpRequest },
   };
 
   return {
@@ -43,6 +54,9 @@ const {
     mockTicketsAddComment,
     mockTicketsGetComments,
     mockTicketsListBoards,
+    mockTicketsListForms,
+    mockTicketsGetForm,
+    mockHttpRequest,
     mockClient,
   };
 });
@@ -61,6 +75,7 @@ vi.mock("../../utils/client.js", () => ({
 
 // Import handler after mocking
 import { ticketsHandler } from "../../domains/tickets.js";
+import { TICKETING_PATHS, ticketingGet } from "../../utils/ticketing-api.js";
 
 describe("Tickets Domain Handler", () => {
   beforeEach(() => {
@@ -71,6 +86,10 @@ describe("Tickets Domain Handler", () => {
     mockTicketsUpdate.mockClear();
     mockTicketsAddComment.mockClear();
     mockTicketsGetComments.mockClear();
+    mockTicketsListBoards.mockClear();
+    mockTicketsListForms.mockClear();
+    mockTicketsGetForm.mockClear();
+    mockHttpRequest.mockClear();
 
     // Reset mock implementations - list returns TicketListResponse
     mockTicketsList.mockResolvedValue({
@@ -109,22 +128,37 @@ describe("Tickets Domain Handler", () => {
       { id: 1, name: "All Tickets" },
       { id: 2, name: "Service Desk" },
     ]);
+    mockTicketsListForms.mockResolvedValue([
+      { id: 1, name: "Default Form" },
+      { id: 2, name: "Onboarding" },
+    ]);
+    mockTicketsGetForm.mockResolvedValue({ id: 1, name: "Default Form", fields: [] });
+    mockHttpRequest.mockResolvedValue([
+      { id: 1, name: "All Tickets" },
+      { id: 2, name: "Service Desk" },
+    ]);
   });
 
   describe("getTools", () => {
     it("should return all ticket tools", () => {
       const tools = ticketsHandler.getTools();
 
-      expect(tools.length).toBe(7);
-
       const toolNames = tools.map((t) => t.name);
-      expect(toolNames).toContain("ninjaone_tickets_list");
-      expect(toolNames).toContain("ninjaone_tickets_get");
-      expect(toolNames).toContain("ninjaone_tickets_create");
-      expect(toolNames).toContain("ninjaone_tickets_update");
-      expect(toolNames).toContain("ninjaone_tickets_add_comment");
-      expect(toolNames).toContain("ninjaone_tickets_comments");
-      expect(toolNames).toContain("ninjaone_tickets_boards_list");
+      expect(toolNames).toEqual([
+        "ninjaone_tickets_list",
+        "ninjaone_tickets_get",
+        "ninjaone_tickets_create",
+        "ninjaone_tickets_update",
+        "ninjaone_tickets_add_comment",
+        "ninjaone_tickets_comments",
+        "ninjaone_tickets_boards_list",
+        "ninjaone_tickets_forms_list",
+        "ninjaone_tickets_form_get",
+        "ninjaone_tickets_statuses_list",
+        "ninjaone_tickets_attributes_list",
+        "ninjaone_tickets_contacts_list",
+        "ninjaone_tickets_users_list",
+      ]);
     });
 
     it("ninjaone_tickets_list should require board_id", () => {
@@ -143,13 +177,87 @@ describe("Tickets Domain Handler", () => {
       expect(getTool?.inputSchema.required).toContain("ticket_id");
     });
 
-    it("ninjaone_tickets_create should require subject and organization_id", () => {
+    it("ninjaone_tickets_create should require subject, organization_id and ticket_form_id", () => {
+      // NewTicket requires clientId, status, subject and ticketFormId; status
+      // has a documented default of "1000", the other three do not.
       const tools = ticketsHandler.getTools();
       const createTool = tools.find((t) => t.name === "ninjaone_tickets_create");
 
       expect(createTool).toBeDefined();
       expect(createTool?.inputSchema.required).toContain("subject");
       expect(createTool?.inputSchema.required).toContain("organization_id");
+      expect(createTool?.inputSchema.required).toContain("ticket_form_id");
+    });
+
+    it.each(["ninjaone_tickets_create", "ninjaone_tickets_update"])(
+      "%s priority enum matches NewTicket/UpdateTicket (CRITICAL is a severity)",
+      (toolName) => {
+        const tool = ticketsHandler.getTools().find((t) => t.name === toolName);
+        const props = tool?.inputSchema.properties as Record<
+          string,
+          { enum?: string[] }
+        >;
+
+        expect(props.priority.enum).toEqual(["NONE", "LOW", "MEDIUM", "HIGH"]);
+        expect(props.severity.enum).toEqual([
+          "NONE",
+          "MINOR",
+          "MODERATE",
+          "MAJOR",
+          "CRITICAL",
+        ]);
+        expect(props.type.enum).toEqual([
+          "PROBLEM",
+          "QUESTION",
+          "INCIDENT",
+          "TASK",
+          "CHANGE_REQUEST",
+          "SERVICE_REQUEST",
+          "PROJECT",
+          "APPOINTMENT",
+          "MISCELLANEOUS",
+        ]);
+      }
+    );
+
+    it("status is a free-form per-tenant id, not a hardcoded enum", () => {
+      const tools = ticketsHandler.getTools();
+      for (const name of [
+        "ninjaone_tickets_list",
+        "ninjaone_tickets_create",
+        "ninjaone_tickets_update",
+      ]) {
+        const props = tools.find((t) => t.name === name)?.inputSchema
+          .properties as Record<string, { enum?: string[] }>;
+        expect(props.status.enum).toBeUndefined();
+      }
+    });
+
+    it("ninjaone_tickets_comments exposes the documented log-entry types", () => {
+      const tool = ticketsHandler
+        .getTools()
+        .find((t) => t.name === "ninjaone_tickets_comments");
+      const props = tool?.inputSchema.properties as Record<string, { enum?: string[] }>;
+
+      expect(props.type.enum).toEqual([
+        "DESCRIPTION",
+        "COMMENT",
+        "CONDITION",
+        "SAVE",
+        "DELETE",
+        "PRODUCT",
+        "INFO",
+      ]);
+    });
+
+    it("ninjaone_tickets_update does not accept a description (PUT takes no comments)", () => {
+      const tool = ticketsHandler
+        .getTools()
+        .find((t) => t.name === "ninjaone_tickets_update");
+      const props = tool?.inputSchema.properties as Record<string, unknown>;
+
+      expect(props).not.toHaveProperty("description");
+      expect(props).not.toHaveProperty("description_public");
     });
 
     it("ninjaone_tickets_add_comment should require ticket_id and body", () => {
@@ -332,23 +440,70 @@ describe("Tickets Domain Handler", () => {
         expect(data.subject).toBe("New Ticket");
       });
 
-      it("should pass all fields to API", async () => {
+      it("should send the documented NewTicket body", async () => {
         await ticketsHandler.handleCall("ninjaone_tickets_create", {
           subject: "New Ticket",
           description: "Test description",
           organization_id: 1,
+          ticket_form_id: 3,
           device_id: 5,
+          location_id: 7,
+          status: "1000",
           priority: "HIGH",
+          severity: "MAJOR",
           type: "INCIDENT",
+          requester_uid: "8a1f0e6a-0000-4000-8000-000000000001",
+          assignee_id: 42,
+          tags: ["tag1"],
+          attributes: [{ attributeId: 9, value: "blue" }],
+        });
+
+        // NinjaOne spells these clientId/ticketFormId/nodeId/assignedAppUserId,
+        // and takes the description as a NewTicketLogEntry rather than a string.
+        expect(mockTicketsCreate).toHaveBeenCalledWith({
+          subject: "New Ticket",
+          clientId: 1,
+          ticketFormId: 3,
+          nodeId: 5,
+          locationId: 7,
+          status: "1000",
+          priority: "HIGH",
+          severity: "MAJOR",
+          type: "INCIDENT",
+          requesterUid: "8a1f0e6a-0000-4000-8000-000000000001",
+          assignedAppUserId: 42,
+          tags: ["tag1"],
+          attributes: [{ attributeId: 9, value: "blue" }],
+          description: { public: true, body: "Test description" },
+        });
+      });
+
+      it("should mark the description internal when description_public is false", async () => {
+        await ticketsHandler.handleCall("ninjaone_tickets_create", {
+          subject: "New Ticket",
+          organization_id: 1,
+          ticket_form_id: 3,
+          description: "Internal note",
+          description_public: false,
+        });
+
+        expect(mockTicketsCreate.mock.calls[0][0].description).toEqual({
+          public: false,
+          body: "Internal note",
+        });
+      });
+
+      it("should omit fields the caller did not supply", async () => {
+        await ticketsHandler.handleCall("ninjaone_tickets_create", {
+          subject: "New Ticket",
+          organization_id: 1,
+          ticket_form_id: 3,
         });
 
         expect(mockTicketsCreate).toHaveBeenCalledWith({
           subject: "New Ticket",
-          description: "Test description",
-          organizationId: 1,
-          deviceId: 5,
-          priority: "HIGH",
-          type: "INCIDENT",
+          clientId: 1,
+          ticketFormId: 3,
         });
       });
     });
@@ -366,6 +521,43 @@ describe("Tickets Domain Handler", () => {
         const data = JSON.parse(result.content[0].text);
         expect(data.subject).toBe("Updated Ticket");
         expect(data.status).toBe("IN_PROGRESS");
+      });
+
+      it("should send the documented UpdateTicket body", async () => {
+        await ticketsHandler.handleCall("ninjaone_tickets_update", {
+          ticket_id: 1,
+          subject: "Updated Ticket",
+          status: "4000",
+          organization_id: 1,
+          ticket_form_id: 3,
+          requester_uid: "8a1f0e6a-0000-4000-8000-000000000001",
+          version: 2,
+          assignee_id: 42,
+          priority: "MEDIUM",
+        });
+
+        expect(mockTicketsUpdate).toHaveBeenCalledWith(1, {
+          subject: "Updated Ticket",
+          status: "4000",
+          clientId: 1,
+          ticketFormId: 3,
+          requesterUid: "8a1f0e6a-0000-4000-8000-000000000001",
+          version: 2,
+          assignedAppUserId: 42,
+          priority: "MEDIUM",
+        });
+      });
+
+      it("should never send a description on update", async () => {
+        // UpdateTicket has no description field — the PUT "does not accept
+        // comments" — so one must not leak into the body even if passed.
+        await ticketsHandler.handleCall("ninjaone_tickets_update", {
+          ticket_id: 1,
+          subject: "Updated Ticket",
+          description: "should be dropped",
+        });
+
+        expect(mockTicketsUpdate.mock.calls[0][1]).not.toHaveProperty("description");
       });
     });
 
@@ -408,32 +600,101 @@ describe("Tickets Domain Handler", () => {
         const data = JSON.parse(result.content[0].text);
         expect(data).toHaveLength(2);
       });
+
+      it("should forward the log-entry type filter", async () => {
+        await ticketsHandler.handleCall("ninjaone_tickets_comments", {
+          ticket_id: 1,
+          type: "COMMENT",
+        });
+
+        expect(mockTicketsGetComments).toHaveBeenCalledWith(1, "COMMENT");
+      });
     });
 
-    describe("ninjaone_tickets_boards_list", () => {
-      it("should list available boards", async () => {
-        const result = await ticketsHandler.handleCall("ninjaone_tickets_boards_list", {});
-
-        expect(result.isError).toBeUndefined();
-        expect(mockTicketsListBoards).toHaveBeenCalledWith();
-
-        const data = JSON.parse(result.content[0].text);
-        expect(data).toHaveLength(2);
-        expect(data[0]).toEqual({ id: 1, name: "All Tickets" });
+    describe("documented endpoint paths", () => {
+      // These paths are copied verbatim from NinjaOne's published OpenAPI
+      // description (NinjaRMM-API-v2.yaml). Pinning them here means a wrong
+      // path is a failing test rather than a 404 in a customer's tenant.
+      it("pins every ticketing path the SDK does not implement", () => {
+        expect(TICKETING_PATHS).toEqual({
+          boards: "/api/v2/ticketing/trigger/boards",
+          statuses: "/api/v2/ticketing/statuses",
+          attributes: "/api/v2/ticketing/attributes",
+          contacts: "/api/v2/ticketing/contact/contacts",
+          users: "/api/v2/ticketing/app-user-contact",
+        });
       });
 
-      it("should return actionable guidance when the boards endpoint 404s", async () => {
-        const notFound = Object.assign(new Error("Resource not found"), {
-          name: "NinjaOneNotFoundError",
-          status: 404,
+      it.each([
+        ["ninjaone_tickets_boards_list", "/api/v2/ticketing/trigger/boards"],
+        ["ninjaone_tickets_statuses_list", "/api/v2/ticketing/statuses"],
+        ["ninjaone_tickets_attributes_list", "/api/v2/ticketing/attributes"],
+        ["ninjaone_tickets_contacts_list", "/api/v2/ticketing/contact/contacts"],
+      ])("%s GETs %s", async (toolName, path) => {
+        const result = await ticketsHandler.handleCall(toolName, {});
+
+        expect(result.isError).toBeUndefined();
+        expect(mockHttpRequest).toHaveBeenCalledWith(path, undefined);
+      });
+
+      it("boards_list uses the plural path, not the SDK's singular one", async () => {
+        // The SDK's listBoards() requests /api/v2/ticketing/trigger/board,
+        // which NinjaOne does not serve — the 404 previously blamed on tenants.
+        await ticketsHandler.handleCall("ninjaone_tickets_boards_list", {});
+
+        expect(mockTicketsListBoards).not.toHaveBeenCalled();
+        expect(mockHttpRequest.mock.calls[0][0]).toBe(
+          "/api/v2/ticketing/trigger/boards"
+        );
+      });
+
+      it("users_list sends the documented query parameter names", async () => {
+        await ticketsHandler.handleCall("ninjaone_tickets_users_list", {
+          user_type: "TECHNICIAN",
+          organization_id: 5,
+          search: "ada",
+          limit: 25,
+          cursor: 100,
         });
-        mockTicketsListBoards.mockRejectedValueOnce(notFound);
 
-        const result = await ticketsHandler.handleCall("ninjaone_tickets_boards_list", {});
+        expect(mockHttpRequest).toHaveBeenCalledWith(
+          "/api/v2/ticketing/app-user-contact",
+          {
+            params: {
+              userType: "TECHNICIAN",
+              clientId: 5,
+              searchCriteria: "ada",
+              pageSize: 25,
+              anchorNaturalId: 100,
+            },
+          }
+        );
+      });
 
-        expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain("404");
-        expect(result.content[0].text).toContain("web UI");
+      it("explains itself if a future SDK build hides its httpClient", async () => {
+        await expect(
+          ticketingGet({} as never, TICKETING_PATHS.boards)
+        ).rejects.toThrow(/no longer exposes an internal httpClient/);
+      });
+    });
+
+    describe("ticket forms", () => {
+      it("should list ticket forms", async () => {
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_forms_list", {});
+
+        expect(result.isError).toBeUndefined();
+        expect(mockTicketsListForms).toHaveBeenCalledWith();
+        expect(JSON.parse(result.content[0].text)).toHaveLength(2);
+      });
+
+      it("should get one ticket form", async () => {
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_form_get", {
+          form_id: 1,
+        });
+
+        expect(result.isError).toBeUndefined();
+        expect(mockTicketsGetForm).toHaveBeenCalledWith(1);
+        expect(JSON.parse(result.content[0].text).id).toBe(1);
       });
     });
 
