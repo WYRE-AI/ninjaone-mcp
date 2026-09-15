@@ -220,15 +220,24 @@ async function handleCall(
       // from. Best-effort — an unresolved label is omitted, and a null card
       // just means no UI surface; the alert JSON itself is never affected.
       let payload: unknown = alert;
+      let structuredContent: unknown = alert;
+      let summary = `Alert ${alertUid}: ${
+        (alert as { message?: string })?.message ?? "no details available"
+      }`;
       try {
         const card = buildAlertCard(alert, await resolveCardLabels(client, alert));
-        if (card) payload = { ...alert, _card: card };
+        if (card) {
+          payload = { ...alert, _card: card };
+          structuredContent = payload;
+          summary = `Alert on ${card.device}: ${card.title} (${card.severity}, ${card.status})`;
+        }
       } catch {
         /* card is progressive enhancement — serve the raw alert unchanged */
       }
 
       return {
-        content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+        content: [{ type: "text", text: summary }],
+        structuredContent,
       };
     }
 

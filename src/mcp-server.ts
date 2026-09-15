@@ -202,6 +202,9 @@ export async function createMcpServer(
         tools: {},
         prompts: {},
         resources: {},
+        extensions: {
+          "io.modelcontextprotocol/ui": {},
+        },
       },
     }
   );
