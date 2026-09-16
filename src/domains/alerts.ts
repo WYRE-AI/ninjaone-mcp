@@ -219,7 +219,6 @@ async function handleCall(
       // MCP Apps: attach the normalized payload the ui:// alert card renders
       // from. Best-effort — an unresolved label is omitted, and a null card
       // just means no UI surface; the alert JSON itself is never affected.
-      let payload: unknown = alert;
       let structuredContent: unknown = alert;
       let summary = `Alert ${alertUid}: ${
         (alert as { message?: string })?.message ?? "no details available"
@@ -227,9 +226,10 @@ async function handleCall(
       try {
         const card = buildAlertCard(alert, await resolveCardLabels(client, alert));
         if (card) {
-          payload = { ...alert, _card: card };
-          structuredContent = payload;
-          summary = `Alert on ${card.device}: ${card.title} (${card.severity}, ${card.status})`;
+          structuredContent = { ...alert, _card: card };
+          summary = card.device
+            ? `Alert on ${card.device}: ${card.title} (${card.severity}, ${card.status})`
+            : `Alert: ${card.title} (${card.severity}, ${card.status})`;
         }
       } catch {
         /* card is progressive enhancement — serve the raw alert unchanged */
