@@ -1,11 +1,12 @@
 /**
  * Shared device-list filtering and pagination.
  *
- * GET /v2/organization/{id}/devices accepts only `pageSize` and `after`.
- * A `nodeClass`, `df`, or `online` query param is not part of that operation
- * and is ignored by NinjaOne, so class/online filters on the org-scoped path
- * have to be applied to the page the API returns. GET /v2/devices is different:
- * it honors a `df` expression, and the SDK compiles class/online into that.
+ * GET /v2/organization/{id}/devices documents only `pageSize` and `after`
+ * (NinjaRMM-API-v2 getOrganizationDevices). Callers still send `nodeClass`
+ * on that request — the SDK copies it onto the query string — and apply
+ * class/online to the returned page, because an undocumented query param
+ * can be ignored. GET /v2/devices is different: it honors a `df` expression,
+ * and the SDK compiles class/online into that.
  *
  * Neither endpoint returns a total or a next-page token. A page the same size
  * as `pageSize` is the signal that more devices exist; the cursor is the max

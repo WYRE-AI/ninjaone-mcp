@@ -238,9 +238,10 @@ async function handleCall(
       // can't be relied on (issue #60) — when dropped it returns the entire fleet
       // instead of erroring. The dedicated GET /v2/organization/{id}/devices
       // endpoint scopes by org through the URL path, which the API can't ignore, so
-      // route through it whenever an organization is specified. That endpoint takes
-      // only pageSize + after (named nodeClass/df/online params are ignored), so
-      // class/online are filtered client-side.
+      // route through it whenever an organization is specified. That operation
+      // documents only pageSize and after, so class/online are also filtered
+      // on the returned page. nodeClass is still sent: the SDK puts it on the
+      // query string, and dropping it was the silent-ignore bug.
       const after = deviceIdAfter(cursor);
 
       const rawDevices =
@@ -248,6 +249,9 @@ async function handleCall(
           ? await client.devices.listByOrganization(organizationId, {
               pageSize: limit,
               after,
+              ...(deviceClass !== undefined
+                ? { nodeClass: deviceClass as DeviceNodeClass }
+                : {}),
             })
           : await client.devices.list({
               nodeClass: deviceClass as DeviceNodeClass | undefined,

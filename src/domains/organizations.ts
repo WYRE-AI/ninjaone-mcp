@@ -4,6 +4,7 @@
  * Provides tools for organization operations in NinjaOne.
  */
 import type { Tool } from "@modelcontextprotocol/server";
+import type { DeviceNodeClass } from "@wyre-ai/node-ninjaone";
 import type { DomainHandler, CallToolResult } from "../utils/types.js";
 import { getClient } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
@@ -88,7 +89,7 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_organizations_devices",
       description:
-        "List devices for one organization. device_class and online are applied to each page — GET /v2/organization/{id}/devices accepts only pageSize and after, so those filters cannot be sent to the API. A full page sets hasMore=true and returns a cursor (the last device id on that page) to pass back. count is matches in this page, not an organization-wide total.",
+        "List devices for one organization. device_class is sent on the organization devices request as nodeClass and also applied to the returned page. online is applied to the page. A full page sets hasMore=true and returns a cursor (the last device id on that page) to pass back. count is matches in this page, not an organization-wide total.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -233,14 +234,16 @@ async function handleCall(
         online,
       });
 
-      // Do not pass device_class/online as query params. listByOrganization
-      // forwards every key as a named query param, and this endpoint only
-      // accepts pageSize and after — nodeClass/df/online are ignored, so
-      // sending them would still return the unfiltered page. Apply the
-      // filters to the returned page instead.
+      // listByOrganization copies these fields onto the query string of
+      // GET /v2/organization/{id}/devices. The published operation only
+      // documents pageSize and after, so nodeClass may be ignored upstream.
+      // Always send it (that was the silent drop) and still filter the page.
       const rawDevices = await client.devices.listByOrganization(orgId, {
         pageSize: limit,
         after,
+        ...(deviceClass !== undefined
+          ? { nodeClass: deviceClass as DeviceNodeClass }
+          : {}),
       });
       logger.debug("API response: devices.listByOrganization", { count: rawDevices.length });
 

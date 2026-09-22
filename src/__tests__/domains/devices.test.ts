@@ -253,13 +253,20 @@ describe("Devices Domain Handler", () => {
       });
 
       it("should filter class/online client-side on the org endpoint", async () => {
-        // The org endpoint has no `df`, so class/online can't be applied by the
-        // API — they must be filtered in code rather than silently ignored.
+        // The org endpoint documents no class filter, so class/online are
+        // applied to the page. device_class must still be on the outbound call.
         const result = await devicesHandler.handleCall("ninjaone_devices_list", {
           organization_id: 5,
           device_class: "WINDOWS_SERVER",
           online: true,
         });
+
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(5, {
+          pageSize: 50,
+          after: undefined,
+          nodeClass: "WINDOWS_SERVER",
+        });
+        expect(mockDevicesList).not.toHaveBeenCalled();
 
         const data = JSON.parse(result.content[0].text);
         expect(data.count).toBe(1);

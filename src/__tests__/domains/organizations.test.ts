@@ -221,7 +221,6 @@ describe("Organizations Domain Handler", () => {
         });
 
         expect(result.isError).toBeUndefined();
-        // Class is not a query param on this endpoint; only pageSize/after are sent.
         expect(mockDevicesListByOrganization).toHaveBeenCalledWith(1, {
           pageSize: 50,
           after: undefined,
@@ -234,19 +233,36 @@ describe("Organizations Domain Handler", () => {
         expect(data.cursor).toBeUndefined();
       });
 
-      it("should apply device_class to the returned page", async () => {
+      it("forwards device_class on the outbound organization devices request", async () => {
         const result = await organizationsHandler.handleCall("ninjaone_organizations_devices", {
           organization_id: 1,
           device_class: "WINDOWS_SERVER",
+          limit: 25,
         });
 
-        const passed = mockDevicesListByOrganization.mock.calls[0][1] as Record<string, unknown>;
-        expect(passed.nodeClass).toBeUndefined();
-        expect(passed.df).toBeUndefined();
+        // listByOrganization serializes these fields as the query string of
+        // GET /v2/organization/{id}/devices. Omitting nodeClass is the regression.
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(1, {
+          pageSize: 25,
+          after: undefined,
+          nodeClass: "WINDOWS_SERVER",
+        });
 
         const data = JSON.parse(result.content[0].text);
         expect(data.count).toBe(1);
         expect(data.devices[0].nodeClass).toBe("WINDOWS_SERVER");
+      });
+
+      it("forwards API node classes that are not the old shorthand values", async () => {
+        await organizationsHandler.handleCall("ninjaone_organizations_devices", {
+          organization_id: 7,
+          device_class: "NMS_SWITCH",
+        });
+
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(
+          7,
+          expect.objectContaining({ nodeClass: "NMS_SWITCH" }),
+        );
       });
 
       it("should apply online to the returned page", async () => {
@@ -276,6 +292,7 @@ describe("Organizations Domain Handler", () => {
         expect(mockDevicesListByOrganization).toHaveBeenCalledWith(1, {
           pageSize: 2,
           after: 99,
+          nodeClass: "WINDOWS_SERVER",
         });
 
         const data = JSON.parse(result.content[0].text);
