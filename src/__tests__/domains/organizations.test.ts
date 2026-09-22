@@ -146,6 +146,7 @@ describe("Organizations Domain Handler", () => {
       expect(deviceClass?.enum).toContain("NMS_SWITCH");
       expect(deviceClass?.enum).toContain("CLOUD_MONITOR_TARGET");
       expect(deviceClass?.enum).toContain("ANDROID");
+      expect(deviceClass?.enum).toContain("AOSP");
       expect(deviceClass?.enum).not.toContain("LINUX");
       expect(deviceClass?.enum).not.toContain("VMWARE_VM");
       expect(deviceClass?.enum).not.toContain("NMS");
@@ -320,6 +321,37 @@ describe("Organizations Domain Handler", () => {
         expect(data.count).toBe(1);
         expect(data.hasMore).toBe(true);
         expect(data.cursor).toBe("20");
+      });
+
+      it("uses the last device id as the cursor, not the max id", async () => {
+        mockDevicesListByOrganization.mockResolvedValueOnce([
+          { id: 30, systemName: "Later", nodeClass: "MAC", offline: false },
+          { id: 10, systemName: "Earlier", nodeClass: "MAC", offline: false },
+        ]);
+
+        const result = await organizationsHandler.handleCall("ninjaone_organizations_devices", {
+          organization_id: 9,
+          limit: 2,
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.cursor).toBe("10");
+      });
+
+      it("drops devices whose online state cannot be read when online is set", async () => {
+        mockDevicesListByOrganization.mockResolvedValueOnce([
+          { id: 1, systemName: "Known", nodeClass: "MAC", offline: false },
+          { id: 2, systemName: "Unknown", nodeClass: "MAC" },
+        ]);
+
+        const result = await organizationsHandler.handleCall("ninjaone_organizations_devices", {
+          organization_id: 9,
+          online: true,
+          limit: 2,
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.devices.map((d: { systemName: string }) => d.systemName)).toEqual(["Known"]);
       });
     });
 

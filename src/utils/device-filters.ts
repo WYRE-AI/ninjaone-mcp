@@ -10,10 +10,10 @@
  * page, because an undocumented `df` can be ignored.
  *
  * Neither endpoint returns a total or a next-page token. A page the same size
- * as `pageSize` is the signal that more devices exist; the cursor is the max
- * device id in that raw page (the API's `after` parameter). Compute the cursor
- * before client-side filtering so a page that filters down to a few matches
- * is not mistaken for the last page.
+ * as `pageSize` is the signal that more devices exist. The cursor is the last
+ * device id in that raw page — NinjaOne's `after` is "last node id from the
+ * previous page". Compute it before client-side filtering so a page that
+ * filters down to a few matches is not mistaken for the last page.
  */
 
 /**
@@ -29,6 +29,7 @@ export const DEVICE_NODE_CLASSES = [
   "LINUX_WORKSTATION",
   "MAC",
   "ANDROID",
+  "AOSP",
   "APPLE_IOS",
   "APPLE_IPADOS",
   "VMWARE_VM_HOST",
@@ -59,8 +60,10 @@ export const DEVICE_NODE_CLASSES = [
   "MANAGED_DEVICE",
 ] as const;
 
+/** A NinjaOne node class accepted by `device_class`. */
 export type DeviceNodeClassName = (typeof DEVICE_NODE_CLASSES)[number];
 
+/** Device fields the class and online filters read. */
 export interface FilterableDevice {
   id: number;
   nodeClass?: string;
@@ -73,9 +76,8 @@ export interface FilterableDevice {
  * themselves.
  *
  * Online-ness is read from the raw NinjaOne device (`offline` boolean),
- * falling back to the SDK's `status` field. When it can't be determined, the
- * device is treated as a match so an unexpected field shape degrades to
- * "unfiltered" rather than silently dropping every device.
+ * falling back to the SDK's `status` field. When `online` is set and neither
+ * field says whether the device is online, the device is excluded.
  */
 export function deviceMatchesFilters(
   device: FilterableDevice,
@@ -94,7 +96,7 @@ export function deviceMatchesFilters(
           : device.status === "OFFLINE"
             ? false
             : undefined;
-    if (isOnline !== undefined && isOnline !== online) {
+    if (isOnline !== online) {
       return false;
     }
   }
@@ -150,7 +152,7 @@ export function devicePageResult<T extends FilterableDevice>(
 ): { devices: T[]; count: number; hasMore: boolean; cursor?: string } {
   const hasMore = rawDevices.length === limit;
   const cursor = hasMore
-    ? String(Math.max(...rawDevices.map((device) => device.id)))
+    ? String(rawDevices[rawDevices.length - 1].id)
     : undefined;
   const devices = rawDevices.filter(predicate);
   return { devices, count: devices.length, hasMore, cursor };
