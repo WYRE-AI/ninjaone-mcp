@@ -154,7 +154,7 @@ Tools:
 - `ninjaone_organizations_get` - Get organization details
 - `ninjaone_organizations_create` - Create a new organization
 - `ninjaone_organizations_locations` - List organization locations
-- `ninjaone_organizations_devices` - List devices for an organization
+- `ninjaone_organizations_devices` - List devices for an organization. `device_class` and `online` filter each page (the organization devices endpoint cannot filter them itself). A full page returns `hasMore: true` and a `cursor`.
 - `ninjaone_organizations_get_custom_fields` - Get organization custom fields
 - `ninjaone_organizations_update_custom_fields` - Update organization custom fields
 
@@ -202,7 +202,13 @@ Tools:
 >
 > Similarly, `ninjaone_devices_list` filters by `organization_id` through
 > NinjaOne's dedicated per-organization endpoint (the general `df=org` device
-> filter is unreliable and can silently return the full fleet).
+> filter is unreliable and can silently return the full fleet). That endpoint
+> cannot filter by device class or online status, so `ninjaone_devices_list`
+> (when an organization is set) and `ninjaone_organizations_devices` apply
+> those filters to each page. `count` is matches in the page; keep paging
+> while `hasMore` is true. `device_class` uses NinjaOne node classes
+> (`LINUX_WORKSTATION`, `VMWARE_VM_HOST`, `NMS_SWITCH`, …) — `LINUX`,
+> `VMWARE_VM`, and `NMS` are not valid.
 
 ## Navigation Tools
 

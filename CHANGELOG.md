@@ -2,6 +2,22 @@
 
 ### Fixed
 
+- **`ninjaone_organizations_devices` ignored `device_class`.** The tool
+  accepted the filter and logged it, then called
+  `GET /v2/organization/{id}/devices` with only `pageSize`. That endpoint
+  does not accept a class filter (`nodeClass` / `df` are not query
+  parameters and are ignored), so the unfiltered page came back with no
+  error. Class and online are now applied to each returned page, the same
+  way `ninjaone_devices_list` already does when an organization is set.
+  The `device_class` enum on both tools now matches NinjaOne node classes
+  (`LINUX`, `VMWARE_VM`, and `NMS` were never valid; Linux, VMware, and
+  network devices use `LINUX_WORKSTATION` / `LINUX_SERVER`,
+  `VMWARE_VM_HOST` / `VMWARE_VM_GUEST`, and the `NMS_*` classes). The
+  response is `{ devices, count, hasMore, cursor }` instead of a bare
+  array. NinjaOne does not return a total or a next-page token; `hasMore`
+  is true when the page is full, and `cursor` is the last device id to
+  pass back. `count` is matches in this page, which can be smaller than
+  the page when a filter is set and `hasMore` is still true.
 - **`ninjaone_status` and the unknown-tool error advised calling
   `ninjaone_navigate` to discover tools without qualification.** Conduit
   suppresses `*_navigate` / `*_back` at the gateway (tier filtering lives in

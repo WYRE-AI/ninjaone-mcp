@@ -95,10 +95,11 @@ describe("Organizations Domain Handler", () => {
         { id: 2, name: "Branch Office" },
       ],
     });
-    // devices.listByOrganization returns Device[] directly
+    // devices.listByOrganization returns Device[] directly (raw NinjaOne
+    // shape: nodeClass + offline boolean).
     mockDevicesListByOrganization.mockResolvedValue([
-      { id: 1, systemName: "Device 1" },
-      { id: 2, systemName: "Device 2" },
+      { id: 1, systemName: "Device 1", nodeClass: "WINDOWS_SERVER", offline: false },
+      { id: 2, systemName: "Device 2", nodeClass: "WINDOWS_WORKSTATION", offline: true },
     ]);
     mockOrganizationsGetCustomFields.mockResolvedValue({
       accountManager: "Jane Smith",
@@ -129,6 +130,24 @@ describe("Organizations Domain Handler", () => {
 
       expect(getTool).toBeDefined();
       expect(getTool?.inputSchema.required).toContain("organization_id");
+    });
+
+    it("ninjaone_organizations_devices should advertise NinjaOne node classes", () => {
+      const tools = organizationsHandler.getTools();
+      const devicesTool = tools.find((t) => t.name === "ninjaone_organizations_devices");
+      const deviceClass = devicesTool?.inputSchema.properties?.device_class as
+        | { enum?: string[] }
+        | undefined;
+
+      expect(deviceClass?.enum).toContain("LINUX_WORKSTATION");
+      expect(deviceClass?.enum).toContain("LINUX_SERVER");
+      expect(deviceClass?.enum).toContain("VMWARE_VM_HOST");
+      expect(deviceClass?.enum).toContain("VMWARE_VM_GUEST");
+      expect(deviceClass?.enum).toContain("NMS_SWITCH");
+      expect(deviceClass?.enum).toContain("ANDROID");
+      expect(deviceClass?.enum).not.toContain("LINUX");
+      expect(deviceClass?.enum).not.toContain("VMWARE_VM");
+      expect(deviceClass?.enum).not.toContain("NMS");
     });
 
     it("ninjaone_organizations_create should require name", () => {
@@ -202,12 +221,69 @@ describe("Organizations Domain Handler", () => {
         });
 
         expect(result.isError).toBeUndefined();
+        // Class is not a query param on this endpoint; only pageSize/after are sent.
         expect(mockDevicesListByOrganization).toHaveBeenCalledWith(1, {
           pageSize: 50,
+          after: undefined,
         });
 
         const data = JSON.parse(result.content[0].text);
-        expect(data).toHaveLength(2);
+        expect(data.devices).toHaveLength(2);
+        expect(data.count).toBe(2);
+        expect(data.hasMore).toBe(false);
+        expect(data.cursor).toBeUndefined();
+      });
+
+      it("should apply device_class to the returned page", async () => {
+        const result = await organizationsHandler.handleCall("ninjaone_organizations_devices", {
+          organization_id: 1,
+          device_class: "WINDOWS_SERVER",
+        });
+
+        const passed = mockDevicesListByOrganization.mock.calls[0][1] as Record<string, unknown>;
+        expect(passed.nodeClass).toBeUndefined();
+        expect(passed.df).toBeUndefined();
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.count).toBe(1);
+        expect(data.devices[0].nodeClass).toBe("WINDOWS_SERVER");
+      });
+
+      it("should apply online to the returned page", async () => {
+        const result = await organizationsHandler.handleCall("ninjaone_organizations_devices", {
+          organization_id: 1,
+          online: false,
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.count).toBe(1);
+        expect(data.devices[0].offline).toBe(true);
+      });
+
+      it("should page with after and report hasMore from the raw page", async () => {
+        mockDevicesListByOrganization.mockResolvedValueOnce([
+          { id: 10, systemName: "Wks", nodeClass: "WINDOWS_WORKSTATION", offline: false },
+          { id: 20, systemName: "Srv", nodeClass: "WINDOWS_SERVER", offline: false },
+        ]);
+
+        const result = await organizationsHandler.handleCall("ninjaone_organizations_devices", {
+          organization_id: 1,
+          device_class: "WINDOWS_SERVER",
+          limit: 2,
+          cursor: "99",
+        });
+
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(1, {
+          pageSize: 2,
+          after: 99,
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        // One match in a full page is not the last page. Cursor is the max id
+        // of the raw page, not the filtered subset.
+        expect(data.count).toBe(1);
+        expect(data.hasMore).toBe(true);
+        expect(data.cursor).toBe("20");
       });
     });
 

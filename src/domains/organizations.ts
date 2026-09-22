@@ -7,6 +7,12 @@ import type { Tool } from "@modelcontextprotocol/server";
 import type { DomainHandler, CallToolResult } from "../utils/types.js";
 import { getClient } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
+import {
+  DEVICE_NODE_CLASSES,
+  deviceIdAfter,
+  deviceMatchesFilters,
+  devicePageResult,
+} from "../utils/device-filters.js";
 
 /**
  * Get organization domain tools
@@ -81,7 +87,8 @@ function getTools(): Tool[] {
     },
     {
       name: "ninjaone_organizations_devices",
-      description: "List organization devices",
+      description:
+        "List devices for one organization. device_class and online are applied to each page — GET /v2/organization/{id}/devices accepts only pageSize and after, so those filters cannot be sent to the API. A full page sets hasMore=true and returns a cursor (the last device id on that page) to pass back. count is matches in this page, not an organization-wide total.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -90,10 +97,21 @@ function getTools(): Tool[] {
           },
           device_class: {
             type: "string",
-            enum: ["WINDOWS_WORKSTATION", "WINDOWS_SERVER", "MAC", "LINUX", "VMWARE_VM"],
+            description:
+              "NinjaOne node class (for example WINDOWS_SERVER, LINUX_WORKSTATION, NMS_SWITCH). LINUX, VMWARE_VM, and NMS are not valid classes.",
+            enum: [...DEVICE_NODE_CLASSES],
+          },
+          online: {
+            type: "boolean",
+            description: "When set, keep only online (true) or offline (false) devices in this page.",
           },
           limit: {
             type: "number",
+            description: "Max devices to fetch (default 50). A full page sets hasMore=true and returns a cursor.",
+          },
+          cursor: {
+            type: "string",
+            description: "Pagination cursor from a previous response's cursor field (the last device id).",
           },
         },
         required: ["organization_id"],
@@ -203,14 +221,35 @@ async function handleCall(
     case "ninjaone_organizations_devices": {
       const orgId = args.organization_id as number;
       const limit = (args.limit as number) || 50;
-      logger.info("API call: devices.listByOrganization", { orgId, limit, deviceClass: args.device_class });
-      const devices = await client.devices.listByOrganization(orgId, {
-        pageSize: limit,
+      const cursor = args.cursor as string | undefined;
+      const deviceClass = args.device_class as string | undefined;
+      const online = args.online as boolean | undefined;
+      const after = deviceIdAfter(cursor);
+      logger.info("API call: devices.listByOrganization", {
+        orgId,
+        limit,
+        after,
+        deviceClass,
+        online,
       });
-      logger.debug("API response: devices.listByOrganization", { devices });
+
+      // Do not pass device_class/online as query params. listByOrganization
+      // forwards every key as a named query param, and this endpoint only
+      // accepts pageSize and after — nodeClass/df/online are ignored, so
+      // sending them would still return the unfiltered page. Apply the
+      // filters to the returned page instead.
+      const rawDevices = await client.devices.listByOrganization(orgId, {
+        pageSize: limit,
+        after,
+      });
+      logger.debug("API response: devices.listByOrganization", { count: rawDevices.length });
+
+      const page = devicePageResult(rawDevices, limit, (device) =>
+        deviceMatchesFilters(device, deviceClass, online)
+      );
 
       return {
-        content: [{ type: "text", text: JSON.stringify(devices, null, 2) }],
+        content: [{ type: "text", text: JSON.stringify(page, null, 2) }],
       };
     }
 

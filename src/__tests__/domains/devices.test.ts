@@ -149,6 +149,21 @@ describe("Devices Domain Handler", () => {
       expect(getTool?.inputSchema.required).toContain("device_id");
     });
 
+    it("ninjaone_devices_list should advertise NinjaOne node classes", () => {
+      const tools = devicesHandler.getTools();
+      const listTool = tools.find((t) => t.name === "ninjaone_devices_list");
+      const deviceClass = listTool?.inputSchema.properties?.device_class as
+        | { enum?: string[] }
+        | undefined;
+
+      expect(deviceClass?.enum).toContain("LINUX_WORKSTATION");
+      expect(deviceClass?.enum).toContain("NMS_SWITCH");
+      expect(deviceClass?.enum).toContain("HYPERV_VMM_HOST");
+      expect(deviceClass?.enum).not.toContain("LINUX");
+      expect(deviceClass?.enum).not.toContain("VMWARE_VM");
+      expect(deviceClass?.enum).not.toContain("NMS");
+    });
+
     it("ninjaone_devices_reboot should require device_id", () => {
       const tools = devicesHandler.getTools();
       const rebootTool = tools.find((t) => t.name === "ninjaone_devices_reboot");
@@ -196,6 +211,16 @@ describe("Devices Domain Handler", () => {
 
         expect(mockDevicesList).toHaveBeenCalledWith(
           expect.objectContaining({ status: "OFFLINE" })
+        );
+      });
+
+      it("should forward API node classes the SDK type does not list", async () => {
+        await devicesHandler.handleCall("ninjaone_devices_list", {
+          device_class: "ANDROID",
+        });
+
+        expect(mockDevicesList).toHaveBeenCalledWith(
+          expect.objectContaining({ nodeClass: "ANDROID" })
         );
       });
 
