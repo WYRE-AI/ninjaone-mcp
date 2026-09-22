@@ -144,6 +144,7 @@ describe("Organizations Domain Handler", () => {
       expect(deviceClass?.enum).toContain("VMWARE_VM_HOST");
       expect(deviceClass?.enum).toContain("VMWARE_VM_GUEST");
       expect(deviceClass?.enum).toContain("NMS_SWITCH");
+      expect(deviceClass?.enum).toContain("CLOUD_MONITOR_TARGET");
       expect(deviceClass?.enum).toContain("ANDROID");
       expect(deviceClass?.enum).not.toContain("LINUX");
       expect(deviceClass?.enum).not.toContain("VMWARE_VM");
@@ -233,24 +234,37 @@ describe("Organizations Domain Handler", () => {
         expect(data.cursor).toBeUndefined();
       });
 
-      it("forwards device_class on the outbound organization devices request", async () => {
+      it("sends device_class upstream as df=class=MAC and does not return other classes", async () => {
+        // Image 2.2.7 repro: organization 9, device_class MAC, limit 3 came
+        // back as WINDOWS_SERVER because the class never left the handler.
+        mockDevicesListByOrganization.mockResolvedValueOnce([
+          { id: 11, systemName: "Srv-A", nodeClass: "WINDOWS_SERVER", offline: false },
+          { id: 12, systemName: "Srv-B", nodeClass: "WINDOWS_SERVER", offline: false },
+          { id: 13, systemName: "Mac-1", nodeClass: "MAC", offline: false },
+        ]);
+
         const result = await organizationsHandler.handleCall("ninjaone_organizations_devices", {
-          organization_id: 1,
-          device_class: "WINDOWS_SERVER",
-          limit: 25,
+          organization_id: 9,
+          device_class: "MAC",
+          limit: 3,
         });
 
-        // listByOrganization serializes these fields as the query string of
-        // GET /v2/organization/{id}/devices. Omitting nodeClass is the regression.
-        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(1, {
-          pageSize: 25,
+        // listByOrganization copies `df` onto GET /v2/organization/{id}/devices.
+        // A named nodeClass param is not what the API applies.
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(9, {
+          pageSize: 3,
           after: undefined,
-          nodeClass: "WINDOWS_SERVER",
+          df: "class=MAC",
         });
+        const passed = mockDevicesListByOrganization.mock.calls[0][1] as Record<string, unknown>;
+        expect(passed.nodeClass).toBeUndefined();
 
         const data = JSON.parse(result.content[0].text);
+        expect(Array.isArray(data)).toBe(false);
+        expect(data.devices.map((d: { nodeClass: string }) => d.nodeClass)).toEqual(["MAC"]);
         expect(data.count).toBe(1);
-        expect(data.devices[0].nodeClass).toBe("WINDOWS_SERVER");
+        expect(data.hasMore).toBe(true);
+        expect(data.cursor).toBe("13");
       });
 
       it("forwards API node classes that are not the old shorthand values", async () => {
@@ -261,7 +275,7 @@ describe("Organizations Domain Handler", () => {
 
         expect(mockDevicesListByOrganization).toHaveBeenCalledWith(
           7,
-          expect.objectContaining({ nodeClass: "NMS_SWITCH" }),
+          expect.objectContaining({ df: "class=NMS_SWITCH" }),
         );
       });
 
@@ -270,6 +284,11 @@ describe("Organizations Domain Handler", () => {
           organization_id: 1,
           online: false,
         });
+
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(
+          1,
+          expect.objectContaining({ df: "offline" }),
+        );
 
         const data = JSON.parse(result.content[0].text);
         expect(data.count).toBe(1);
@@ -292,7 +311,7 @@ describe("Organizations Domain Handler", () => {
         expect(mockDevicesListByOrganization).toHaveBeenCalledWith(1, {
           pageSize: 2,
           after: 99,
-          nodeClass: "WINDOWS_SERVER",
+          df: "class=WINDOWS_SERVER",
         });
 
         const data = JSON.parse(result.content[0].text);

@@ -5,11 +5,14 @@
 - **`ninjaone_organizations_devices` ignored `device_class`.** The tool
   accepted the filter and logged it, then called
   `GET /v2/organization/{id}/devices` with only `pageSize`. `device_class`
-  is now forwarded as `nodeClass` on that request (the SDK copies it onto
-  the query string), including when `ninjaone_devices_list` is scoped to an
-  organization. The published operation only documents `pageSize` and
-  `after`, so the page is still filtered by class and online in case the
-  extra query parameter is ignored.
+  is now sent upstream as `df=class=<NodeClass>`, the same expression
+  `ninjaone_devices_list` uses on `GET /v2/devices`. A named `nodeClass`
+  query parameter is ignored, so sending the name alone still returned
+  other classes (a `MAC` request for organization 9 came back as
+  `WINDOWS_SERVER`). The published organization-devices operation only
+  documents `pageSize` and `after`, so the page is still filtered by class
+  and online in case `df` is ignored there too. The same `df` is sent when
+  `ninjaone_devices_list` is scoped to an organization.
   The `device_class` enum on both tools now matches NinjaOne node classes
   (`LINUX`, `VMWARE_VM`, and `NMS` were never valid; Linux, VMware, and
   network devices use `LINUX_WORKSTATION` / `LINUX_SERVER`,

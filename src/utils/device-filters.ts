@@ -2,11 +2,12 @@
  * Shared device-list filtering and pagination.
  *
  * GET /v2/organization/{id}/devices documents only `pageSize` and `after`
- * (NinjaRMM-API-v2 getOrganizationDevices). Callers still send `nodeClass`
- * on that request — the SDK copies it onto the query string — and apply
- * class/online to the returned page, because an undocumented query param
- * can be ignored. GET /v2/devices is different: it honors a `df` expression,
- * and the SDK compiles class/online into that.
+ * (NinjaRMM-API-v2 getOrganizationDevices). A named `nodeClass` query
+ * parameter is not part of that operation, and GET /v2/devices ignores
+ * named class parameters too — only `df=class=<NodeClass>` is applied.
+ * Org-scoped calls therefore send that same `df` expression (the SDK copies
+ * every list param onto the query string) and still filter the returned
+ * page, because an undocumented `df` can be ignored.
  *
  * Neither endpoint returns a total or a next-page token. A page the same size
  * as `pageSize` is the signal that more devices exist; the cursor is the max
@@ -98,6 +99,37 @@ export function deviceMatchesFilters(
     }
   }
   return true;
+}
+
+/**
+ * Query for GET /v2/organization/{id}/devices.
+ *
+ * `df` uses the same grammar as GET /v2/devices (`class=<NodeClass>`,
+ * `online` / `offline`). `listByOrganization` forwards these keys as the
+ * query string; a named `nodeClass` parameter would not.
+ */
+export interface OrganizationDevicesQuery {
+  pageSize: number;
+  after?: number;
+  df?: string;
+}
+
+export function organizationDevicesQuery(options: {
+  pageSize: number;
+  after?: number;
+  deviceClass?: string;
+  online?: boolean;
+}): OrganizationDevicesQuery {
+  const query: OrganizationDevicesQuery = {
+    pageSize: options.pageSize,
+    after: options.after,
+  };
+  const df: string[] = [];
+  if (options.deviceClass) df.push(`class=${options.deviceClass}`);
+  if (options.online === true) df.push("online");
+  else if (options.online === false) df.push("offline");
+  if (df.length > 0) query.df = df.join(" AND ");
+  return query;
 }
 
 /** `after` cursor for GET /v2/organization/{id}/devices. Non-numeric cursors are ignored. */

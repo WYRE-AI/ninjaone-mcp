@@ -158,6 +158,7 @@ describe("Devices Domain Handler", () => {
 
       expect(deviceClass?.enum).toContain("LINUX_WORKSTATION");
       expect(deviceClass?.enum).toContain("NMS_SWITCH");
+      expect(deviceClass?.enum).toContain("CLOUD_MONITOR_TARGET");
       expect(deviceClass?.enum).toContain("HYPERV_VMM_HOST");
       expect(deviceClass?.enum).not.toContain("LINUX");
       expect(deviceClass?.enum).not.toContain("VMWARE_VM");
@@ -264,7 +265,7 @@ describe("Devices Domain Handler", () => {
         expect(mockDevicesListByOrganization).toHaveBeenCalledWith(5, {
           pageSize: 50,
           after: undefined,
-          nodeClass: "WINDOWS_SERVER",
+          df: "class=WINDOWS_SERVER AND online",
         });
         expect(mockDevicesList).not.toHaveBeenCalled();
 

@@ -4,7 +4,6 @@
  * Provides tools for organization operations in NinjaOne.
  */
 import type { Tool } from "@modelcontextprotocol/server";
-import type { DeviceNodeClass } from "@wyre-ai/node-ninjaone";
 import type { DomainHandler, CallToolResult } from "../utils/types.js";
 import { getClient } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
@@ -13,6 +12,7 @@ import {
   deviceIdAfter,
   deviceMatchesFilters,
   devicePageResult,
+  organizationDevicesQuery,
 } from "../utils/device-filters.js";
 
 /**
@@ -89,7 +89,7 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_organizations_devices",
       description:
-        "List devices for one organization. device_class is sent on the organization devices request as nodeClass and also applied to the returned page. online is applied to the page. A full page sets hasMore=true and returns a cursor (the last device id on that page) to pass back. count is matches in this page, not an organization-wide total.",
+        "List devices for one organization. device_class is sent upstream as df=class=<NodeClass> (the filter GET /v2/devices actually applies; a named nodeClass parameter is ignored) and the page is filtered again so a dropped df cannot return other classes. online is sent as the df online/offline predicate and applied to the page. A full page sets hasMore=true and returns a cursor (the last device id on that page). count is matches in this page, not an organization-wide total.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -234,17 +234,17 @@ async function handleCall(
         online,
       });
 
-      // listByOrganization copies these fields onto the query string of
-      // GET /v2/organization/{id}/devices. The published operation only
-      // documents pageSize and after, so nodeClass may be ignored upstream.
-      // Always send it (that was the silent drop) and still filter the page.
-      const rawDevices = await client.devices.listByOrganization(orgId, {
+      // df=class=<NodeClass> is what reaches upstream. listByOrganization
+      // copies the object onto the query string; a named nodeClass param is
+      // not applied (same as GET /v2/devices). The page is filtered too, so
+      // an ignored df cannot return WINDOWS_SERVER for a MAC request.
+      const query = organizationDevicesQuery({
         pageSize: limit,
         after,
-        ...(deviceClass !== undefined
-          ? { nodeClass: deviceClass as DeviceNodeClass }
-          : {}),
+        deviceClass,
+        online,
       });
+      const rawDevices = await client.devices.listByOrganization(orgId, query);
       logger.debug("API response: devices.listByOrganization", { count: rawDevices.length });
 
       const page = devicePageResult(rawDevices, limit, (device) =>
