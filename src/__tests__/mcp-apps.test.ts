@@ -225,10 +225,20 @@ describe("MCP Apps alert card", () => {
       );
       expect(res.status).toBe(200);
       const body = (await mcpJson(res)) as {
-        result?: { isError?: boolean; content?: { text?: string }[] };
+        result?: {
+          isError?: boolean;
+          content?: { text?: string }[];
+          structuredContent?: Record<string, unknown>;
+        };
       };
       expect(body.result?.isError).toBeFalsy();
-      const payload = JSON.parse(body.result?.content?.[0]?.text ?? "{}");
+      expect(body.result?.content?.[0]?.text).toBe(
+        "Alert on SRV-DC01: Low disk space (Critical, Open)"
+      );
+      const payload = body.result?.structuredContent as Record<
+        string,
+        unknown
+      >;
       expect(payload.uid).toBe(openAlert.uid);
       expect(payload.message).toBe(openAlert.message);
       expect(payload._card).toEqual({
@@ -262,13 +272,19 @@ describe("MCP Apps alert card", () => {
         CREDS_ENV
       );
       const body = (await mcpJson(res)) as {
-        result?: { isError?: boolean; content?: { text?: string }[] };
+        result?: {
+          isError?: boolean;
+          content?: { text?: string }[];
+          structuredContent?: {
+            _card?: { device?: string; organization?: string; title?: string };
+          };
+        };
       };
       expect(body.result?.isError).toBeFalsy();
-      const payload = JSON.parse(body.result?.content?.[0]?.text ?? "{}");
-      expect(payload._card.device).toBeUndefined();
-      expect(payload._card.organization).toBeUndefined();
-      expect(payload._card.title).toBe("Low disk space");
+      const payload = body.result?.structuredContent;
+      expect(payload?._card?.device).toBeUndefined();
+      expect(payload?._card?.organization).toBeUndefined();
+      expect(payload?._card?.title).toBe("Low disk space");
     });
 
     it("serves the raw payload without a card when normalization is impossible", async () => {
@@ -288,12 +304,16 @@ describe("MCP Apps alert card", () => {
         CREDS_ENV
       );
       const body = (await mcpJson(res)) as {
-        result?: { isError?: boolean; content?: { text?: string }[] };
+        result?: {
+          isError?: boolean;
+          content?: { text?: string }[];
+          structuredContent?: { message?: string; _card?: unknown };
+        };
       };
       expect(body.result?.isError).toBeFalsy();
-      const payload = JSON.parse(body.result?.content?.[0]?.text ?? "{}");
-      expect(payload.message).toBe("odd payload");
-      expect(payload._card).toBeUndefined();
+      const payload = body.result?.structuredContent;
+      expect(payload?.message).toBe("odd payload");
+      expect(payload?._card).toBeUndefined();
     });
   });
 
