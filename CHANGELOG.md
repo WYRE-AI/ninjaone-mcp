@@ -65,7 +65,9 @@
   it. The probe also hardcoded port 8080 while `MCP_HTTP_PORT` is
   configurable, so changing the port landed in the same permanently-unhealthy
   state. Both the Dockerfile `HEALTHCHECK` and `docker-compose.yml` now probe
-  `127.0.0.1` on `$MCP_HTTP_PORT` (default `8080`).
+  `127.0.0.1` on `MCP_HTTP_PORT` (default `8080`). Compose writes `$$` so it
+  does not substitute the host's port before the container shell reads
+  `MCP_HTTP_PORT`.
 
 ### Security
 
