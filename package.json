@@ -46,7 +46,7 @@
   },
   "homepage": "https://github.com/WYRE-AI/ninjaone-mcp#readme",
   "dependencies": {
-    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/node": "^2.1.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "@wyre-ai/node-ninjaone": "^2.2.0"
   },
