@@ -2,6 +2,14 @@
 
 ### Fixed
 
+- **Cloudflare Workers `/mcp` returned HTTP 500 on every request.** `bindServerRef`
+  called `AsyncLocalStorage.enterWith()`, which workerd's `node:async_hooks`
+  does not implement (`asyncLocalStorage.enterWith() is not implemented`).
+  Server construction threw inside `createMcpServer` before `initialize` or
+  `tools/list` could run. Handlers are now bound with `AsyncLocalStorage.run()`
+  (supported on workerd), including across `await` inside tool handlers.
+  Gateway mode does not fall back to a shared module-level server.
+  (#103)
 - **`ninjaone_organizations_devices` ignored `device_class`.** The tool
   accepted the filter and logged it, then called
   `GET /v2/organization/{id}/devices` with only `pageSize`. `device_class`

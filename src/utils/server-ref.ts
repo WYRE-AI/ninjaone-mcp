@@ -6,59 +6,86 @@
  * `let _server` singleton, set synchronously via `setServerRef` and read
  * back later by elicitation helpers — including after `await` gaps inside
  * async tool handlers (e.g. after awaiting a NinjaOne API call, before
- * sending an elicitation prompt back through "the" server).
+ * sending an elicitation prompt back through "the" server). A module-level
+ * fallback is still unsafe in gateway mode: concurrent requests share it,
+ * so one tenant's elicitation can be delivered on another's server.
  *
- * In gateway (multi-tenant HTTP) mode, `@modelcontextprotocol/server`'s
- * `createMcpHandler` creates a fresh `Server` per request via our factory
- * (`makeMcpServerFactory` in mcp-server.ts) and then drives that same
- * request's `tools/call` dispatch within the SAME async continuation that
- * invoked the factory — one fresh factory call per inbound request, never
- * nested inside or sharing a continuation with a different request. That
- * makes `bindServerRef` (AsyncLocalStorage's `enterWith`), called once at
- * server creation, correctly scoped per request here: `enterWith`'s binding
- * follows only this request's own causal async chain and is never observed
- * by a concurrently-running sibling request's chain, even across `await`
- * gaps (unlike a plain module-level `let`, which every request shares
- * unconditionally). This is the same wiring (and same SDK version) already
- * verified for scalepad-mcp's identical fix.
+ * `createMcpHandler` (Node HTTP and Cloudflare Workers) and `serveStdio`
+ * build a fresh `Server` in the factory, return it, and only later invoke
+ * that server's request handlers. Binding with `AsyncLocalStorage.enterWith()`
+ * at construction time relied on those later invocations staying in the same
+ * async continuation. workerd does not implement `enterWith()` — the call
+ * throws `asyncLocalStorage.enterWith() is not implemented` — so every
+ * Workers `/mcp` request died inside `createMcpServer` before initialize
+ * (issue #103). `run()` and `getStore()` are implemented.
  *
- * This differs from repos where our own code owns the raw per-request HTTP
- * callback directly (e.g. a bespoke `http.ts` built on `node:http`) — there,
- * the whole per-request chain gets wrapped in `runWithServerRef` (ALS's
- * `.run()`) instead, since that code owns the callback boundary needed to
- * scope it explicitly. Here, `createMcpHandler` owns request dispatch
- * internally after the factory returns, so there is no callback boundary of
- * our own to wrap — `enterWith`, bound once at server creation, is the only
- * viable option, and is correctly scoped given the factory-per-request
- * contract above. The same applies to worker.ts's Cloudflare Workers
- * `createMcpHandler` usage.
- *
- * For stdio, `index.ts` passes a 0-arg factory to `serveStdio` that's
- * called exactly once for the process's single long-lived session — the
- * same `bindServerRef` call there binds for that entire session, since
- * there is only ever one tenant and no concurrent request to isolate from.
+ * `bindServerRef` therefore does not enter a context at construction time.
+ * It wraps `server.setRequestHandler` so each handler registered afterwards
+ * (tools, prompts, resources) runs inside `AsyncLocalStorage.run(server, ...)`.
+ * The store follows that handler's awaited descendants and nobody else's.
+ * Concurrent requests each get their own server and their own `run()` frame.
+ * stdio is the same wrap: one long-lived server, rebound on every handler
+ * invocation. No module-level server is retained.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Server } from "@modelcontextprotocol/server";
 
 const serverRefStore = new AsyncLocalStorage<Server>();
 
+/** Servers whose `setRequestHandler` already scopes handlers with `run()`. */
+const patchedServers = new WeakSet<Server>();
+
+type RequestHandler = (request: unknown, ctx: unknown) => unknown;
+
 /**
- * Bind `server` for the remainder of the current async execution.
- *
- * Safe for both entrypoints given each one's own factory-invocation
- * contract: stdio's factory runs once for the whole process (single
- * session, no concurrent tenants); gateway/HTTP's and Workers' factory runs
- * once per request, with that request's own dispatch continuing in the
- * same causal chain, so concurrent requests never share a binding.
+ * The subset of `Server.setRequestHandler` this module wraps. The SDK method
+ * is overloaded (spec method + handler, or custom method + schemas + handler);
+ * both forms end in a user callback, which is what must run inside `run()`.
  */
-export function bindServerRef(server: Server): void {
-  serverRefStore.enterWith(server);
+interface HandlerRegistration {
+  setRequestHandler(
+    method: string,
+    schemasOrHandler: RequestHandler | object,
+    maybeHandler?: RequestHandler
+  ): void;
 }
 
 /**
- * Get the server bound to the current request's async context, or `null`
- * if none is bound (e.g. called outside of any request/session).
+ * Arm `server` so every request handler registered after this call runs with
+ * `server` bound via `AsyncLocalStorage.run()`.
+ *
+ * Call once, before registering handlers (`createMcpServer` does). Safe for
+ * stdio, Node HTTP, and Cloudflare Workers: nothing here calls `enterWith()`.
+ */
+export function bindServerRef(server: Server): void {
+  if (patchedServers.has(server)) return;
+
+  const registration = server as unknown as HandlerRegistration;
+  if (typeof registration.setRequestHandler !== "function") {
+    throw new TypeError("bindServerRef requires server.setRequestHandler");
+  }
+  patchedServers.add(server);
+
+  const original = registration.setRequestHandler.bind(registration);
+  registration.setRequestHandler = (method, schemasOrHandler, maybeHandler) => {
+    if (typeof schemasOrHandler === "function") {
+      const handler = schemasOrHandler;
+      original(method, (request, ctx) => serverRefStore.run(server, () => handler(request, ctx)));
+      return;
+    }
+    if (typeof maybeHandler === "function") {
+      original(method, schemasOrHandler, (request, ctx) =>
+        serverRefStore.run(server, () => maybeHandler(request, ctx))
+      );
+      return;
+    }
+    original(method, schemasOrHandler, maybeHandler);
+  };
+}
+
+/**
+ * Get the server bound to the current handler's async context, or `null`
+ * if none is bound (outside a request handler, or before `bindServerRef`).
  */
 export function getServerRef(): Server | null {
   return serverRefStore.getStore() ?? null;
