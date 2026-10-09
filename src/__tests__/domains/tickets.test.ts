@@ -75,6 +75,7 @@ vi.mock("../../utils/client.js", () => ({
 
 // Import handler after mocking
 import { ticketsHandler } from "../../domains/tickets.js";
+import { logger } from "../../utils/logger.js";
 import { TICKETING_PATHS, ticketingGet } from "../../utils/ticketing-api.js";
 
 describe("Tickets Domain Handler", () => {
@@ -669,6 +670,37 @@ describe("Tickets Domain Handler", () => {
             },
           }
         );
+      });
+
+      it("logs ticketing parameter names, not query values", async () => {
+        const info = vi.spyOn(logger, "info");
+        try {
+          await ticketsHandler.handleCall("ninjaone_tickets_users_list", {
+            search: "ada@example.com",
+          });
+
+          const ticketingLogs = info.mock.calls.filter(
+            (call) => call[0] === "API call: ticketing users"
+          );
+          expect(ticketingLogs).toEqual([
+            [
+              "API call: ticketing users",
+              {
+                path: "/api/v2/ticketing/app-user-contact",
+                params: [
+                  "userType",
+                  "clientId",
+                  "searchCriteria",
+                  "pageSize",
+                  "anchorNaturalId",
+                ],
+              },
+            ],
+          ]);
+          expect(JSON.stringify(ticketingLogs)).not.toContain("ada@example.com");
+        } finally {
+          info.mockRestore();
+        }
       });
 
       it("explains itself if a future SDK build hides its httpClient", async () => {

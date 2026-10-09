@@ -3,11 +3,11 @@
 ### Added
 
 - **Six ticketing discovery tools.** `ninjaone_tickets_forms_list` and
-  `ninjaone_tickets_form_get` (`GET /v2/ticketing/ticket-form[/{id}]`),
-  `ninjaone_tickets_statuses_list` (`GET /v2/ticketing/statuses`),
-  `ninjaone_tickets_attributes_list` (`GET /v2/ticketing/attributes`),
-  `ninjaone_tickets_contacts_list` (`GET /v2/ticketing/contact/contacts`) and
-  `ninjaone_tickets_users_list` (`GET /v2/ticketing/app-user-contact`). Ticket
+  `ninjaone_tickets_form_get` (`GET /api/v2/ticketing/ticket-form[/{id}]`),
+  `ninjaone_tickets_statuses_list` (`GET /api/v2/ticketing/statuses`),
+  `ninjaone_tickets_attributes_list` (`GET /api/v2/ticketing/attributes`),
+  `ninjaone_tickets_contacts_list` (`GET /api/v2/ticketing/contact/contacts`) and
+  `ninjaone_tickets_users_list` (`GET /api/v2/ticketing/app-user-contact`). Ticket
   forms, statuses and custom fields are configured per tenant, so without these
   the IDs `ninjaone_tickets_create` and `ninjaone_tickets_update` require could
   only be guessed or read out of the web UI.
@@ -52,8 +52,8 @@
   pass back. `count` is matches in this page, which can be smaller than
   the page when a filter is set and `hasMore` is still true.
 - **`ninjaone_tickets_boards_list` requested a path NinjaOne does not serve.**
-  The SDK's `listBoards()` calls `GET /v2/ticketing/trigger/board`; the
-  documented endpoint is the plural `GET /v2/ticketing/trigger/boards`. The
+  The SDK's `listBoards()` calls `GET /api/v2/ticketing/trigger/board`; the
+  documented endpoint is the plural `GET /api/v2/ticketing/trigger/boards`. The
   resulting 404 was being reported as "some tenants don't expose this endpoint"
   and callers were told to read board IDs out of the web UI — it failed on every
   tenant. The tool now calls the documented path, so board discovery works and
@@ -128,6 +128,9 @@
 
 ### Security
 
+- **Ticketing discovery calls no longer log query values.** `searchCriteria` on
+  `ninjaone_tickets_users_list` can be a person's name or email. The ticketing
+  GET log records the path and parameter names only.
 - **Fixed a cross-tenant credential leak in gateway mode.** Gateway mode
   previously stored per-request vendor credentials/client on module-level
   mutable singletons (`_clientOverride`, `_credentialOverrides` in

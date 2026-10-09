@@ -555,7 +555,10 @@ async function readTicketing(
   name: keyof typeof TICKETING_PATHS,
   params?: Record<string, string | number | boolean | undefined>
 ): Promise<CallToolResult> {
-  logger.info(`API call: ticketing ${name}`, { path: TICKETING_PATHS[name], params });
+  logger.info(`API call: ticketing ${name}`, {
+    path: TICKETING_PATHS[name],
+    params: params ? Object.keys(params) : undefined,
+  });
   const data = await ticketingGet<unknown>(client, TICKETING_PATHS[name], params);
   logger.debug(`API response: ticketing ${name}`, {
     count: Array.isArray(data) ? data.length : undefined,
