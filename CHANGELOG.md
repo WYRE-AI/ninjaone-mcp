@@ -1,5 +1,26 @@
 ## [Unreleased]
 
+### Added
+
+- **Six ticketing discovery tools.** `ninjaone_tickets_forms_list` and
+  `ninjaone_tickets_form_get` (`GET /api/v2/ticketing/ticket-form[/{id}]`),
+  `ninjaone_tickets_statuses_list` (`GET /api/v2/ticketing/statuses`),
+  `ninjaone_tickets_attributes_list` (`GET /api/v2/ticketing/attributes`),
+  `ninjaone_tickets_contacts_list` (`GET /api/v2/ticketing/contact/contacts`) and
+  `ninjaone_tickets_users_list` (`GET /api/v2/ticketing/app-user-contact`). Ticket
+  forms, statuses and custom fields are configured per tenant, so without these
+  the IDs `ninjaone_tickets_create` and `ninjaone_tickets_update` require could
+  only be guessed or read out of the web UI.
+  Adapted from work by @N3bDev in N3bDev/ninjaone-mcp.
+- **`ninjaone_tickets_create` and `ninjaone_tickets_update` now cover the whole
+  documented ticket body**: `severity`, `type`, `requester_uid`, `assignee_id`,
+  `location_id`, `tags`, `attributes` (custom field values) and `version` for
+  optimistic locking.
+- **`ninjaone_tickets_comments` accepts a `type` filter** over the documented
+  log-entry types (`DESCRIPTION`, `COMMENT`, `CONDITION`, `SAVE`, `DELETE`,
+  `PRODUCT`, `INFO`), so `type=COMMENT` returns just the conversation instead of
+  the full activity feed.
+
 ### Fixed
 
 - **Cloudflare Workers `/mcp` returned HTTP 500 on every request.** `bindServerRef`
@@ -30,6 +51,34 @@
   is true when the page is full, and `cursor` is the last device id to
   pass back. `count` is matches in this page, which can be smaller than
   the page when a filter is set and `hasMore` is still true.
+- **`ninjaone_tickets_boards_list` requested a path NinjaOne does not serve.**
+  The SDK's `listBoards()` calls `GET /api/v2/ticketing/trigger/board`; the
+  documented endpoint is the plural `GET /api/v2/ticketing/trigger/boards`. The
+  resulting 404 was being reported as "some tenants don't expose this endpoint"
+  and callers were told to read board IDs out of the web UI — it failed on every
+  tenant. The tool now calls the documented path, so board discovery works and
+  `ninjaone_tickets_list`'s required `board_id` is actually discoverable.
+  Adapted from work by @N3bDev in N3bDev/ninjaone-mcp.
+- **`ninjaone_tickets_create` sent field names NinjaOne rejects.** It posted
+  `organizationId`, `deviceId` and a plain-string `description`, where the
+  documented `NewTicket` body requires `clientId`, `nodeId`, a
+  `NewTicketLogEntry` object for `description`, and a `ticketFormId` that was
+  never sent at all. `ticket_form_id` is now required and the body is built to
+  the published schema.
+- **`ninjaone_tickets_update` sent an assignee field that does not exist.** It
+  mapped `assignee_id` to `assigneeUid` as a string; NinjaOne's `UpdateTicket`
+  takes a numeric `assignedAppUserId`. It also no longer accepts a
+  `description`: the ticket PUT "does not accept comments", so a description
+  there was silently dropped by the API — use `ninjaone_tickets_add_comment`.
+- **`priority` offered a value NinjaOne rejects.** `CRITICAL` was listed as a
+  priority; the documented priorities are `NONE`, `LOW`, `MEDIUM`, `HIGH`, and
+  `CRITICAL` is a `severity`. `type` gained the five documented values it was
+  missing (`CHANGE_REQUEST`, `SERVICE_REQUEST`, `PROJECT`, `APPOINTMENT`,
+  `MISCELLANEOUS`).
+- **`status` was a hardcoded four-value enum** (`OPEN`/`IN_PROGRESS`/`WAITING`/
+  `CLOSED`) on list, create and update. Statuses are per-tenant IDs, so the enum
+  made every tenant with custom statuses unreachable. It is now free-form, with
+  `ninjaone_tickets_statuses_list` to discover the real values.
 - **`ninjaone_status` and the unknown-tool error advised calling
   `ninjaone_navigate` to discover tools without qualification.** Conduit
   suppresses `*_navigate` / `*_back` at the gateway (tier filtering lives in
@@ -79,6 +128,9 @@
 
 ### Security
 
+- **Ticketing discovery calls no longer log query values.** `searchCriteria` on
+  `ninjaone_tickets_users_list` can be a person's name or email. The ticketing
+  GET log records the path and parameter names only.
 - **Fixed a cross-tenant credential leak in gateway mode.** Gateway mode
   previously stored per-request vendor credentials/client on module-level
   mutable singletons (`_clientOverride`, `_credentialOverrides` in

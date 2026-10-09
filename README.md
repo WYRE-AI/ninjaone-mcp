@@ -177,18 +177,28 @@ Manage service tickets.
 Tools:
 - `ninjaone_tickets_list` - List tickets from a board (requires `board_id`; `status`/`organization_id`/`device_id` filters are applied client-side, see notes below)
 - `ninjaone_tickets_get` - Get ticket details
-- `ninjaone_tickets_create` - Create a new ticket
-- `ninjaone_tickets_update` - Update an existing ticket
+- `ninjaone_tickets_create` - Create a new ticket (requires a `ticket_form_id`)
+- `ninjaone_tickets_update` - Update an existing ticket's fields
 - `ninjaone_tickets_add_comment` - Add a comment to a ticket
-- `ninjaone_tickets_comments` - Get ticket comments
+- `ninjaone_tickets_comments` - Get ticket log entries, optionally filtered by `type`
 - `ninjaone_tickets_boards_list` - List ticket boards (to discover `board_id` values)
+- `ninjaone_tickets_forms_list` - List ticket forms (to discover `ticket_form_id` values)
+- `ninjaone_tickets_form_get` - Get one ticket form with its field definitions
+- `ninjaone_tickets_statuses_list` - List the tenant's configured ticket statuses
+- `ninjaone_tickets_attributes_list` - List ticket attribute (custom field) definitions
+- `ninjaone_tickets_contacts_list` - List ticketing contacts (for `requester_uid`)
+- `ninjaone_tickets_users_list` - List technicians, end users and contacts (for `assignee_id`)
 
 > **Note:** NinjaOne queries tickets per board, and board IDs vary by tenant —
 > board 1 is *not* always the "All Tickets" board, so `ninjaone_tickets_list`
 > requires an explicit `board_id` rather than silently guessing one. Discover
-> IDs with `ninjaone_tickets_boards_list`; on tenants where that endpoint
-> returns 404, read the numeric ID from the board link's URL in the NinjaOne
-> web UI (e.g. the "All tickets" sidebar link).
+> IDs with `ninjaone_tickets_boards_list`.
+>
+> **Note:** Ticket statuses, forms and attributes are configured per tenant.
+> Read the real IDs with `ninjaone_tickets_statuses_list`,
+> `ninjaone_tickets_forms_list` and `ninjaone_tickets_attributes_list` rather
+> than assuming fixed names. `priority` is `NONE`/`LOW`/`MEDIUM`/`HIGH` —
+> `CRITICAL` is a `severity`, not a priority.
 >
 > **Note:** NinjaOne's board-run API cannot filter tickets by status,
 > organization, or device server-side (attempting to throws a generic
@@ -197,8 +207,8 @@ Tools:
 > in this page) from `scanned` (tickets examined) and includes `hasMore`/`cursor`
 > — page through until `hasMore` is `false` to get every match, and never treat a
 > single page's `count` as a board-wide total. Status is matched against each
-> ticket's status display name, so custom board statuses may not map to the
-> `OPEN`/`IN_PROGRESS`/`WAITING`/`CLOSED` values.
+> ticket's status display name, so pass a name the tenant actually uses —
+> `ninjaone_tickets_statuses_list` shows them.
 >
 > Similarly, `ninjaone_devices_list` filters by `organization_id` through
 > NinjaOne's dedicated per-organization endpoint (the general `df=org` device
