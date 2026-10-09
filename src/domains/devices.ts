@@ -9,40 +9,14 @@ import type { DomainHandler, CallToolResult } from "../utils/types.js";
 import { getClient } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
 import { elicitSelection } from "../utils/elicitation.js";
-
-/**
- * Client-side device filter for the organization-scoped endpoint
- * (GET /v2/organization/{id}/devices), which — unlike GET /v2/devices — accepts
- * no `df` query, so class/online can't be filtered by the API there.
- *
- * Online-ness is read from the raw NinjaOne device (`offline` boolean), falling
- * back to the SDK's `status` field. When it can't be determined, the device is
- * treated as a match so an unexpected field shape degrades to "unfiltered"
- * rather than silently dropping every device.
- */
-function deviceMatchesFilters(
-  device: { nodeClass?: string; status?: string; offline?: boolean },
-  deviceClass: string | undefined,
-  online: boolean | undefined
-): boolean {
-  if (deviceClass !== undefined && device.nodeClass !== deviceClass) {
-    return false;
-  }
-  if (online !== undefined) {
-    const isOnline =
-      typeof device.offline === "boolean"
-        ? !device.offline
-        : device.status === "ONLINE"
-          ? true
-          : device.status === "OFFLINE"
-            ? false
-            : undefined;
-    if (isOnline !== undefined && isOnline !== online) {
-      return false;
-    }
-  }
-  return true;
-}
+import {
+  DEVICE_NODE_CLASSES,
+  deviceIdAfter,
+  deviceMatchesFilters,
+  devicePageResult,
+  organizationDevicesQuery,
+  type DeviceNodeClassName,
+} from "../utils/device-filters.js";
 
 /**
  * Get device domain tools
@@ -61,16 +35,9 @@ function getTools(): Tool[] {
           },
           device_class: {
             type: "string",
-            enum: [
-              "WINDOWS_WORKSTATION",
-              "WINDOWS_SERVER",
-              "MAC",
-              "LINUX_WORKSTATION",
-              "LINUX_SERVER",
-              "VMWARE_VM_HOST",
-              "VMWARE_VM_GUEST",
-              "NMS",
-            ],
+            description:
+              "NinjaOne node class (for example WINDOWS_SERVER, LINUX_WORKSTATION, NMS_SWITCH). LINUX, VMWARE_VM, and NMS are not valid classes.",
+            enum: [...DEVICE_NODE_CLASSES],
           },
           online: {
             type: "boolean",
@@ -253,7 +220,11 @@ async function handleCall(
             ? "ONLINE"
             : "OFFLINE";
 
-      const deviceClass = args.device_class as DeviceNodeClass | undefined;
+      // The SDK's DeviceNodeClass is a subset of the API enum (it still lists
+      // NMS and omits ANDROID, NMS_SWITCH, …). The value is interpolated into
+      // `df=class=<value>` with no runtime allow-list, so the wider API enum
+      // is safe to pass through.
+      const deviceClass = args.device_class as DeviceNodeClassName | undefined;
 
       logger.info("API call: devices.list", {
         organizationId,
@@ -268,59 +239,42 @@ async function handleCall(
       // can't be relied on (issue #60) — when dropped it returns the entire fleet
       // instead of erroring. The dedicated GET /v2/organization/{id}/devices
       // endpoint scopes by org through the URL path, which the API can't ignore, so
-      // route through it whenever an organization is specified. That endpoint takes
-      // only pageSize + after (no `df`), so class/online are filtered client-side.
-      const after =
-        cursor !== undefined && Number.isFinite(Number(cursor))
-          ? Number(cursor)
-          : undefined;
+      // route through it whenever an organization is specified. Class and
+      // online go upstream as `df` (class=<NodeClass>, online/offline) — a
+      // named nodeClass parameter is ignored — and the page is filtered too.
+      const after = deviceIdAfter(cursor);
+      const online = args.online as boolean | undefined;
 
       const rawDevices =
         organizationId !== undefined
-          ? await client.devices.listByOrganization(organizationId, {
-              pageSize: limit,
-              after,
-            })
+          ? await client.devices.listByOrganization(
+              organizationId,
+              organizationDevicesQuery({
+                pageSize: limit,
+                after,
+                deviceClass,
+                online,
+              })
+            )
           : await client.devices.list({
-              nodeClass: deviceClass,
+              nodeClass: deviceClass as DeviceNodeClass | undefined,
               status,
               pageSize: limit,
               cursor,
             });
       logger.debug("API response: devices.list", { deviceCount: rawDevices.length });
 
-      // GET /v2/devices has no total count and paginates by device id (the API's
-      // `after` param returns ids greater than the cursor), so a page exactly the
-      // size of the limit means results were likely truncated. Surface an explicit
-      // hasMore flag and a cursor — the max id in this page, which the caller passes
-      // back as `cursor` to fetch the next page. Compute this from the raw page
-      // (before any client-side filtering) so `hasMore` tracks the API's paging and
-      // not the filtered subset — otherwise a page that filters down to a handful of
-      // devices would look like the last page when it isn't.
-      const hasMore = rawDevices.length === limit;
-      const nextCursor = hasMore
-        ? String(Math.max(...rawDevices.map((d) => d.id)))
-        : undefined;
-
-      // The organization endpoint can't apply class/online server-side, so filter
-      // them here rather than silently ignore them. (On the no-org path the `df`
-      // query already applied them.)
-      const devices =
+      const page = devicePageResult(rawDevices, limit, (device) =>
         organizationId !== undefined
-          ? rawDevices.filter((d) =>
-              deviceMatchesFilters(d, deviceClass, args.online as boolean | undefined)
-            )
-          : rawDevices;
+          ? deviceMatchesFilters(device, deviceClass, online)
+          : true
+      );
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(
-              { devices, count: devices.length, hasMore, cursor: nextCursor },
-              null,
-              2
-            ),
+            text: JSON.stringify(page, null, 2),
           },
         ],
       };

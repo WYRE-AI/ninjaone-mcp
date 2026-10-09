@@ -149,6 +149,22 @@ describe("Devices Domain Handler", () => {
       expect(getTool?.inputSchema.required).toContain("device_id");
     });
 
+    it("ninjaone_devices_list should advertise NinjaOne node classes", () => {
+      const tools = devicesHandler.getTools();
+      const listTool = tools.find((t) => t.name === "ninjaone_devices_list");
+      const deviceClass = listTool?.inputSchema.properties?.device_class as
+        | { enum?: string[] }
+        | undefined;
+
+      expect(deviceClass?.enum).toContain("LINUX_WORKSTATION");
+      expect(deviceClass?.enum).toContain("NMS_SWITCH");
+      expect(deviceClass?.enum).toContain("CLOUD_MONITOR_TARGET");
+      expect(deviceClass?.enum).toContain("HYPERV_VMM_HOST");
+      expect(deviceClass?.enum).not.toContain("LINUX");
+      expect(deviceClass?.enum).not.toContain("VMWARE_VM");
+      expect(deviceClass?.enum).not.toContain("NMS");
+    });
+
     it("ninjaone_devices_reboot should require device_id", () => {
       const tools = devicesHandler.getTools();
       const rebootTool = tools.find((t) => t.name === "ninjaone_devices_reboot");
@@ -199,6 +215,16 @@ describe("Devices Domain Handler", () => {
         );
       });
 
+      it("should forward API node classes the SDK type does not list", async () => {
+        await devicesHandler.handleCall("ninjaone_devices_list", {
+          device_class: "ANDROID",
+        });
+
+        expect(mockDevicesList).toHaveBeenCalledWith(
+          expect.objectContaining({ nodeClass: "ANDROID" })
+        );
+      });
+
       it("should omit the status filter when online is not provided", async () => {
         await devicesHandler.handleCall("ninjaone_devices_list", {
           device_class: "MAC",
@@ -228,13 +254,20 @@ describe("Devices Domain Handler", () => {
       });
 
       it("should filter class/online client-side on the org endpoint", async () => {
-        // The org endpoint has no `df`, so class/online can't be applied by the
-        // API — they must be filtered in code rather than silently ignored.
+        // The org endpoint documents no class filter, so class/online are
+        // applied to the page. device_class must still be on the outbound call.
         const result = await devicesHandler.handleCall("ninjaone_devices_list", {
           organization_id: 5,
           device_class: "WINDOWS_SERVER",
           online: true,
         });
+
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(5, {
+          pageSize: 50,
+          after: undefined,
+          df: "class=WINDOWS_SERVER AND online",
+        });
+        expect(mockDevicesList).not.toHaveBeenCalled();
 
         const data = JSON.parse(result.content[0].text);
         expect(data.count).toBe(1);

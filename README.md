@@ -154,7 +154,7 @@ Tools:
 - `ninjaone_organizations_get` - Get organization details
 - `ninjaone_organizations_create` - Create a new organization
 - `ninjaone_organizations_locations` - List organization locations
-- `ninjaone_organizations_devices` - List devices for an organization
+- `ninjaone_organizations_devices` - List devices for an organization. `device_class` is sent upstream as `df=class=<NodeClass>` and applied to each page. The response is `{ devices, count, hasMore, cursor }`, not a bare array.
 - `ninjaone_organizations_get_custom_fields` - Get organization custom fields
 - `ninjaone_organizations_update_custom_fields` - Update organization custom fields
 
@@ -212,7 +212,15 @@ Tools:
 >
 > Similarly, `ninjaone_devices_list` filters by `organization_id` through
 > NinjaOne's dedicated per-organization endpoint (the general `df=org` device
-> filter is unreliable and can silently return the full fleet).
+> filter is unreliable and can silently return the full fleet). That endpoint
+> documents no device-class query parameter. `ninjaone_devices_list`
+> (when an organization is set) and `ninjaone_organizations_devices` still
+> send `device_class` upstream as `df=class=<NodeClass>` (a named
+> `nodeClass` parameter is ignored) and apply class and online filters to
+> each page. `count` is matches in the page; keep paging
+> while `hasMore` is true. `device_class` uses NinjaOne node classes
+> (`LINUX_WORKSTATION`, `VMWARE_VM_HOST`, `NMS_SWITCH`, …) — `LINUX`,
+> `VMWARE_VM`, and `NMS` are not valid.
 
 ## Navigation Tools
 

@@ -16,6 +16,7 @@ export const CONFIG_PLACEHOLDER = /^\$\{.*\}$/;
  */
 export type CallToolResult = {
   content: Array<{ type: "text"; text: string }>;
+  structuredContent?: unknown;
   isError?: boolean;
 };
 

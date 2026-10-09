@@ -95,10 +95,11 @@ describe("Organizations Domain Handler", () => {
         { id: 2, name: "Branch Office" },
       ],
     });
-    // devices.listByOrganization returns Device[] directly
+    // devices.listByOrganization returns Device[] directly (raw NinjaOne
+    // shape: nodeClass + offline boolean).
     mockDevicesListByOrganization.mockResolvedValue([
-      { id: 1, systemName: "Device 1" },
-      { id: 2, systemName: "Device 2" },
+      { id: 1, systemName: "Device 1", nodeClass: "WINDOWS_SERVER", offline: false },
+      { id: 2, systemName: "Device 2", nodeClass: "WINDOWS_WORKSTATION", offline: true },
     ]);
     mockOrganizationsGetCustomFields.mockResolvedValue({
       accountManager: "Jane Smith",
@@ -129,6 +130,26 @@ describe("Organizations Domain Handler", () => {
 
       expect(getTool).toBeDefined();
       expect(getTool?.inputSchema.required).toContain("organization_id");
+    });
+
+    it("ninjaone_organizations_devices should advertise NinjaOne node classes", () => {
+      const tools = organizationsHandler.getTools();
+      const devicesTool = tools.find((t) => t.name === "ninjaone_organizations_devices");
+      const deviceClass = devicesTool?.inputSchema.properties?.device_class as
+        | { enum?: string[] }
+        | undefined;
+
+      expect(deviceClass?.enum).toContain("LINUX_WORKSTATION");
+      expect(deviceClass?.enum).toContain("LINUX_SERVER");
+      expect(deviceClass?.enum).toContain("VMWARE_VM_HOST");
+      expect(deviceClass?.enum).toContain("VMWARE_VM_GUEST");
+      expect(deviceClass?.enum).toContain("NMS_SWITCH");
+      expect(deviceClass?.enum).toContain("CLOUD_MONITOR_TARGET");
+      expect(deviceClass?.enum).toContain("ANDROID");
+      expect(deviceClass?.enum).toContain("AOSP");
+      expect(deviceClass?.enum).not.toContain("LINUX");
+      expect(deviceClass?.enum).not.toContain("VMWARE_VM");
+      expect(deviceClass?.enum).not.toContain("NMS");
     });
 
     it("ninjaone_organizations_create should require name", () => {
@@ -204,10 +225,133 @@ describe("Organizations Domain Handler", () => {
         expect(result.isError).toBeUndefined();
         expect(mockDevicesListByOrganization).toHaveBeenCalledWith(1, {
           pageSize: 50,
+          after: undefined,
         });
 
         const data = JSON.parse(result.content[0].text);
-        expect(data).toHaveLength(2);
+        expect(data.devices).toHaveLength(2);
+        expect(data.count).toBe(2);
+        expect(data.hasMore).toBe(false);
+        expect(data.cursor).toBeUndefined();
+      });
+
+      it("sends device_class upstream as df=class=MAC and does not return other classes", async () => {
+        // Image 2.2.7 repro: organization 9, device_class MAC, limit 3 came
+        // back as WINDOWS_SERVER because the class never left the handler.
+        mockDevicesListByOrganization.mockResolvedValueOnce([
+          { id: 11, systemName: "Srv-A", nodeClass: "WINDOWS_SERVER", offline: false },
+          { id: 12, systemName: "Srv-B", nodeClass: "WINDOWS_SERVER", offline: false },
+          { id: 13, systemName: "Mac-1", nodeClass: "MAC", offline: false },
+        ]);
+
+        const result = await organizationsHandler.handleCall("ninjaone_organizations_devices", {
+          organization_id: 9,
+          device_class: "MAC",
+          limit: 3,
+        });
+
+        // listByOrganization copies `df` onto GET /v2/organization/{id}/devices.
+        // A named nodeClass param is not what the API applies.
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(9, {
+          pageSize: 3,
+          after: undefined,
+          df: "class=MAC",
+        });
+        const passed = mockDevicesListByOrganization.mock.calls[0][1] as Record<string, unknown>;
+        expect(passed.nodeClass).toBeUndefined();
+
+        const data = JSON.parse(result.content[0].text);
+        expect(Array.isArray(data)).toBe(false);
+        expect(data.devices.map((d: { nodeClass: string }) => d.nodeClass)).toEqual(["MAC"]);
+        expect(data.count).toBe(1);
+        expect(data.hasMore).toBe(true);
+        expect(data.cursor).toBe("13");
+      });
+
+      it("forwards API node classes that are not the old shorthand values", async () => {
+        await organizationsHandler.handleCall("ninjaone_organizations_devices", {
+          organization_id: 7,
+          device_class: "NMS_SWITCH",
+        });
+
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(
+          7,
+          expect.objectContaining({ df: "class=NMS_SWITCH" }),
+        );
+      });
+
+      it("should apply online to the returned page", async () => {
+        const result = await organizationsHandler.handleCall("ninjaone_organizations_devices", {
+          organization_id: 1,
+          online: false,
+        });
+
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(
+          1,
+          expect.objectContaining({ df: "offline" }),
+        );
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.count).toBe(1);
+        expect(data.devices[0].offline).toBe(true);
+      });
+
+      it("should page with after and report hasMore from the raw page", async () => {
+        mockDevicesListByOrganization.mockResolvedValueOnce([
+          { id: 10, systemName: "Wks", nodeClass: "WINDOWS_WORKSTATION", offline: false },
+          { id: 20, systemName: "Srv", nodeClass: "WINDOWS_SERVER", offline: false },
+        ]);
+
+        const result = await organizationsHandler.handleCall("ninjaone_organizations_devices", {
+          organization_id: 1,
+          device_class: "WINDOWS_SERVER",
+          limit: 2,
+          cursor: "99",
+        });
+
+        expect(mockDevicesListByOrganization).toHaveBeenCalledWith(1, {
+          pageSize: 2,
+          after: 99,
+          df: "class=WINDOWS_SERVER",
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        // One match in a full page is not the last page. Cursor is the max id
+        // of the raw page, not the filtered subset.
+        expect(data.count).toBe(1);
+        expect(data.hasMore).toBe(true);
+        expect(data.cursor).toBe("20");
+      });
+
+      it("uses the last device id as the cursor, not the max id", async () => {
+        mockDevicesListByOrganization.mockResolvedValueOnce([
+          { id: 30, systemName: "Later", nodeClass: "MAC", offline: false },
+          { id: 10, systemName: "Earlier", nodeClass: "MAC", offline: false },
+        ]);
+
+        const result = await organizationsHandler.handleCall("ninjaone_organizations_devices", {
+          organization_id: 9,
+          limit: 2,
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.cursor).toBe("10");
+      });
+
+      it("drops devices whose online state cannot be read when online is set", async () => {
+        mockDevicesListByOrganization.mockResolvedValueOnce([
+          { id: 1, systemName: "Known", nodeClass: "MAC", offline: false },
+          { id: 2, systemName: "Unknown", nodeClass: "MAC" },
+        ]);
+
+        const result = await organizationsHandler.handleCall("ninjaone_organizations_devices", {
+          organization_id: 9,
+          online: true,
+          limit: 2,
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.devices.map((d: { systemName: string }) => d.systemName)).toEqual(["Known"]);
       });
     });
 
