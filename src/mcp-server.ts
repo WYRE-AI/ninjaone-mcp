@@ -18,6 +18,8 @@ import {
   isValidRegion,
   getBaseUrlForRegion,
   parseScopes,
+  parseAllowedScriptIds,
+  parseBooleanFlag,
   type CallToolResult,
 } from "./utils/types.js";
 import {
@@ -28,6 +30,7 @@ import {
 } from "./utils/client.js";
 import { logger } from "./utils/logger.js";
 import { bindServerRef } from "./utils/server-ref.js";
+import { elicitConfirmation } from "./utils/elicitation.js";
 import { registerPromptHandlers } from "./prompts.js";
 import {
   ALERT_CARD_RESOURCE_URI,
@@ -60,7 +63,7 @@ async function getAllDomainTools(): Promise<Tool[]> {
   return allTools;
 }
 
-type DomainName = "devices" | "organizations" | "alerts" | "tickets";
+type DomainName = "devices" | "organizations" | "alerts" | "tickets" | "scripts";
 
 const domainDescriptions: Record<DomainName, string> = {
   devices:
@@ -71,6 +74,8 @@ const domainDescriptions: Record<DomainName, string> = {
     "Alert management - view, reset, and summarize monitoring alerts across devices and organizations",
   tickets:
     "Ticket management - create, update, comment on, and track service tickets",
+  scripts:
+    "Scripting - list and run org-approved scripts/actions on a device (ninjaone_scripts_run is destructive and requires org pre-approval)",
 };
 
 const navigateTool: Tool = {
@@ -87,7 +92,8 @@ const navigateTool: Tool = {
 - devices: ${domainDescriptions.devices}
 - organizations: ${domainDescriptions.organizations}
 - alerts: ${domainDescriptions.alerts}
-- tickets: ${domainDescriptions.tickets}`,
+- tickets: ${domainDescriptions.tickets}
+- scripts: ${domainDescriptions.scripts}`,
       },
     },
     required: ["domain"],
@@ -104,6 +110,23 @@ const statusTool: Tool = {
 };
 
 /**
+ * TEMPORARY -- remove once the Nwaj Tech go-live elicitation smoke test
+ * (task_1791839481841_16496506) is done. No device/org targeting, no
+ * NinjaOne API call -- purely echoes what this MCP client returns for a
+ * server-initiated elicitation request, so whoever runs the smoke test
+ * doesn't need any MCP-internals knowledge to interpret the result.
+ */
+const debugElicitationCheckTool: Tool = {
+  name: "ninjaone_debug_elicitation_check",
+  description:
+    "TEMPORARY diagnostic for the ninjaone_scripts_run launch smoke test -- remove after use. Issues a server-initiated confirmation prompt and reports exactly what the connected client returned. No side effects.",
+  inputSchema: {
+    type: "object",
+    properties: {},
+  },
+};
+
+/**
  * Build a validated NinjaOneCredentials object from raw values.
  * Returns `{ creds }` on success or `{ error }` when client id/secret are missing.
  * Shared by every transport (Node HTTP headers, Workers headers, Workers env).
@@ -112,7 +135,9 @@ export function buildCredentials(
   clientId: string | undefined,
   clientSecret: string | undefined,
   region: string | undefined,
-  scopes?: string | undefined
+  scopes?: string | undefined,
+  allowedScriptIds?: string | undefined,
+  allowSelfAttestedConfirmation?: string | undefined
 ): { creds?: NinjaOneCredentials; error?: string } {
   if (!clientId || !clientSecret) {
     return {
@@ -130,6 +155,18 @@ export function buildCredentials(
       region: validRegion,
       baseUrl: getBaseUrlForRegion(validRegion),
       scopes: parseScopes(scopes ?? process.env.NINJAONE_SCOPES),
+      // Deliberately NOT `?? undefined`-defaulted to "allow" on a missing
+      // value anywhere in this chain -- parseAllowedScriptIds itself always
+      // returns a Set (empty when unset/unparseable), and the scripts domain
+      // handler treats an empty Set as deny-all. See its own module comment.
+      allowedScriptIds: parseAllowedScriptIds(
+        allowedScriptIds ?? process.env.NINJAONE_ALLOWED_SCRIPT_IDS
+      ),
+      // Same fail-closed shape: unset/unparseable is always false, never an
+      // implicit "on". See types.ts parseBooleanFlag and domains/scripts.ts.
+      allowSelfAttestedConfirmation: parseBooleanFlag(
+        allowSelfAttestedConfirmation ?? process.env.NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION
+      ),
     },
   };
 }
@@ -148,7 +185,9 @@ export function resolveGatewayCredentials(
     getHeader("x-ninja-client-id"),
     getHeader("x-ninja-client-secret"),
     getHeader("x-ninja-region"),
-    getHeader("x-ninja-scopes")
+    getHeader("x-ninja-scopes"),
+    getHeader("x-ninja-allowed-script-ids"),
+    getHeader("x-ninja-allow-self-attested-confirmation")
   );
 }
 
@@ -212,7 +251,9 @@ export async function createMcpServer(
   registerPromptHandlers(server);
 
   server.setRequestHandler('tools/list', async () => {
-    return { tools: [navigateTool, statusTool, ...allDomainTools] };
+    return {
+      tools: [navigateTool, statusTool, debugElicitationCheckTool, ...allDomainTools],
+    };
   });
 
   // MCP Apps (SEP-1865): the ui:// alert card is static HTML embedded at
@@ -303,6 +344,22 @@ export async function createMcpServer(
           };
         }
 
+        if (name === "ninjaone_debug_elicitation_check") {
+          const result = await elicitConfirmation(
+            "Elicitation smoke test for ninjaone_scripts_run -- click confirm (or decline) to report what this client returns."
+          );
+          const verdict =
+            result === null
+              ? "FAIL (unsupported): this client did not respond to the elicitation request at all -- server.elicitInput() returned null, meaning the client never implements the capability. ninjaone_scripts_run will refuse every call for this client unless allowSelfAttestedConfirmation is explicitly enabled for this org."
+              : result === true
+                ? "PASS (confirmed): this client supports elicitation and returned 'confirm'. ninjaone_scripts_run's human-confirmation step will work normally."
+                : "PASS (declined): this client supports elicitation and returned 'decline' -- the capability works; you just didn't confirm this particular prompt. Run again and click confirm to see the PASS/confirmed result.";
+
+          return {
+            content: [{ type: "text", text: `Elicitation check result: ${verdict}\n\nRaw return value: ${JSON.stringify(result)}` }],
+          };
+        }
+
         const toolArgs = (args ?? {}) as Record<string, unknown>;
 
         if (name.startsWith("ninjaone_devices_")) {
@@ -319,6 +376,10 @@ export async function createMcpServer(
         }
         if (name.startsWith("ninjaone_tickets_")) {
           const handler = await getDomainHandler("tickets");
+          return await handler.handleCall(name, toolArgs);
+        }
+        if (name.startsWith("ninjaone_scripts_")) {
+          const handler = await getDomainHandler("scripts");
           return await handler.handleCall(name, toolArgs);
         }
 

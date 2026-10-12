@@ -14,10 +14,17 @@
  *    - X-Ninja-Client-ID
  *    - X-Ninja-Client-Secret
  *    - X-Ninja-Region (optional; us, eu, oc, ca, us2, fed)
+ *    - X-Ninja-Allowed-Script-Ids (optional; unset means scripts_run refuses
+ *      everything for this org -- see utils/types.ts parseAllowedScriptIds)
+ *    - X-Ninja-Allow-Self-Attested-Confirmation (optional; unset/false
+ *      means scripts_run refuses outright on a client with no elicitation
+ *      support, rather than silently falling back to confirm:true)
  * 2. Worker secrets / vars (env mode):
  *    - NINJAONE_CLIENT_ID
  *    - NINJAONE_CLIENT_SECRET
  *    - NINJAONE_REGION (optional)
+ *    - NINJAONE_ALLOWED_SCRIPT_IDS (optional)
+ *    - NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION (optional)
  *
  * `tools/list` and `initialize` work without credentials; only `tools/call`
  * requires them.
@@ -33,6 +40,8 @@ export interface Env {
   NINJAONE_CLIENT_ID?: string;
   NINJAONE_CLIENT_SECRET?: string;
   NINJAONE_REGION?: string;
+  NINJAONE_ALLOWED_SCRIPT_IDS?: string;
+  NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION?: string;
   AUTH_MODE?: string;
   LOG_LEVEL?: string;
 }
@@ -41,7 +50,7 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
-    "Content-Type, Accept, Authorization, Mcp-Session-Id, MCP-Protocol-Version, X-Ninja-Client-ID, X-Ninja-Client-Secret, X-Ninja-Region",
+    "Content-Type, Accept, Authorization, Mcp-Session-Id, MCP-Protocol-Version, X-Ninja-Client-ID, X-Ninja-Client-Secret, X-Ninja-Region, X-Ninja-Allowed-Script-Ids, X-Ninja-Allow-Self-Attested-Confirmation",
   "Access-Control-Expose-Headers": "Mcp-Session-Id",
 };
 

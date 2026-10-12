@@ -131,6 +131,8 @@ describe("NinjaOne Client Utilities", () => {
         clientSecret: "test-secret",
         region: "us",
         baseUrl: "https://app.ninjarmm.com",
+        allowedScriptIds: new Set(),
+        allowSelfAttestedConfirmation: false,
       });
     });
 
@@ -152,6 +154,8 @@ describe("NinjaOne Client Utilities", () => {
         clientSecret: "test-secret",
         region: "us",
         baseUrl: "https://app.ninjarmm.com",
+        allowedScriptIds: new Set(),
+        allowSelfAttestedConfirmation: false,
       });
     });
 
@@ -166,6 +170,8 @@ describe("NinjaOne Client Utilities", () => {
           clientSecret: "test-secret",
           region: "us",
           baseUrl: "https://app.ninjarmm.com",
+          allowedScriptIds: new Set(),
+          allowSelfAttestedConfirmation: false,
         });
       }
     });
@@ -181,6 +187,8 @@ describe("NinjaOne Client Utilities", () => {
         clientSecret: "test-secret",
         region: "us",
         baseUrl: "https://app.ninjarmm.com",
+        allowedScriptIds: new Set(),
+        allowSelfAttestedConfirmation: false,
       });
     });
 
@@ -195,6 +203,8 @@ describe("NinjaOne Client Utilities", () => {
         clientSecret: "test-secret",
         region: "eu",
         baseUrl: "https://eu.ninjarmm.com",
+        allowedScriptIds: new Set(),
+        allowSelfAttestedConfirmation: false,
       });
     });
 
@@ -209,6 +219,8 @@ describe("NinjaOne Client Utilities", () => {
         clientSecret: "test-secret",
         region: "oc",
         baseUrl: "https://oc.ninjarmm.com",
+        allowedScriptIds: new Set(),
+        allowSelfAttestedConfirmation: false,
       });
     });
 
@@ -223,6 +235,8 @@ describe("NinjaOne Client Utilities", () => {
         clientSecret: "test-secret",
         region: "eu",
         baseUrl: "https://eu.ninjarmm.com",
+        allowedScriptIds: new Set(),
+        allowSelfAttestedConfirmation: false,
       });
     });
 
@@ -331,6 +345,8 @@ describe("NinjaOne Client Utilities", () => {
           region: "eu" as const,
           baseUrl: "https://eu.ninjarmm.com",
           scopes: ["monitoring"],
+          allowedScriptIds: new Set<string>(),
+          allowSelfAttestedConfirmation: false,
         },
         () => getClient()
       )) as unknown as { config: { scopes?: string[] } };
@@ -461,12 +477,16 @@ describe("NinjaOne Client Utilities", () => {
         clientSecret: "tenant-a-secret",
         region: "us" as const,
         baseUrl: "https://app.ninjarmm.com",
+        allowedScriptIds: new Set<string>(),
+        allowSelfAttestedConfirmation: false,
       };
       const credsB = {
         clientId: "tenant-b-id",
         clientSecret: "tenant-b-secret",
         region: "eu" as const,
         baseUrl: "https://eu.ninjarmm.com",
+        allowedScriptIds: new Set<string>(),
+        allowSelfAttestedConfirmation: false,
       };
 
       const runA = runWithCredentials(credsA, async () => {
@@ -513,6 +533,8 @@ describe("NinjaOne Client Utilities", () => {
         clientSecret: "gateway-secret",
         region: "us" as const,
         baseUrl: "https://app.ninjarmm.com",
+        allowedScriptIds: new Set<string>(),
+        allowSelfAttestedConfirmation: false,
       };
       const gatewayClient = await runWithCredentials(gatewayCreds, () => getClient());
 

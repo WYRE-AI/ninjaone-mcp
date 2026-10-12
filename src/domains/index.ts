@@ -46,6 +46,11 @@ export async function getDomainHandler(
       handler = ticketsHandler;
       break;
     }
+    case "scripts": {
+      const { scriptsHandler } = await import("./scripts.js");
+      handler = scriptsHandler;
+      break;
+    }
     default:
       throw new Error(`Unknown domain: ${domain}`);
   }
@@ -59,7 +64,7 @@ export async function getDomainHandler(
  * Get all available domain names
  */
 export function getAvailableDomains(): DomainName[] {
-  return ["devices", "organizations", "alerts", "tickets"];
+  return ["devices", "organizations", "alerts", "tickets", "scripts"];
 }
 
 /**
