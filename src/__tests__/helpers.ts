@@ -28,6 +28,15 @@ export interface WorkerdEnterWithGap {
  * outside of it; callers that want a regression-guard assertion should use
  * the returned `calledDirectly()`, not `enterWith`'s own mock call count
  * (which now includes legitimate internal passthrough calls).
+ *
+ * The "inside run()" window is scoped tightly to Node's own setup/teardown
+ * around the callback, not the callback's own execution: `insideNativeRun`
+ * is decremented immediately before invoking the callback and restored only
+ * once the callback's *synchronous* portion returns. Without this, a direct
+ * `enterWith()` call made synchronously from inside a `run()` callback
+ * (before its first `await`) would be indistinguishable from Node's own
+ * internal call and silently pass through uncaught — verified with a
+ * standalone repro before narrowing this.
  */
 export function simulateWorkerdEnterWithGap(): WorkerdEnterWithGap {
   const originalRun = AsyncLocalStorage.prototype.run;
@@ -39,9 +48,22 @@ export function simulateWorkerdEnterWithGap(): WorkerdEnterWithGap {
     this: AsyncLocalStorage<unknown>,
     ...args: Parameters<AsyncLocalStorage<unknown>["run"]>
   ) {
+    const [store, callback, ...runArgs] = args;
     insideNativeRun++;
     try {
-      return originalRun.apply(this, args);
+      return originalRun.call(
+        this,
+        store,
+        function (this: unknown, ...callbackArgs: unknown[]) {
+          insideNativeRun--;
+          try {
+            return Reflect.apply(callback, this, callbackArgs);
+          } finally {
+            insideNativeRun++;
+          }
+        },
+        ...runArgs
+      );
     } finally {
       insideNativeRun--;
     }

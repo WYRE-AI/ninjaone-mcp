@@ -22,6 +22,7 @@
  * observed on tenant B's mock `elicitInput`, and passes again once the
  * ALS-based fix is restored — see the PR description.)
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Server } from "@modelcontextprotocol/server";
 import { bindServerRef, getServerRef } from "../utils/server-ref.js";
@@ -80,6 +81,21 @@ describe("server-ref cross-tenant isolation", () => {
   it("getServerRef returns null outside of any bound context", () => {
     expect(getServerRef()).toBeNull();
   });
+
+  it(
+    "treats a direct enterWith() call made synchronously inside a run() " +
+      "callback (before any await) as a direct call, not internal Node " +
+      "passthrough -- the exact shape a regression in bindServerRef would take",
+    () => {
+      const scratch = new AsyncLocalStorage<string>();
+      expect(() => {
+        scratch.run("store", () => {
+          scratch.enterWith("malicious");
+        });
+      }).toThrow("asyncLocalStorage.enterWith() is not implemented");
+      expect(enterWithGap.calledDirectly()).toBe(true);
+    }
+  );
 
   it("resolves the server inside a handler invoked after bindServerRef returns", async () => {
     const server = createFakeServer("tenant-X");
