@@ -17,10 +17,9 @@
  * response must reflect only its own request's credentials.
  */
 
-import { AsyncLocalStorage } from "node:async_hooks";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import worker, { type Env } from "../worker.js";
-import { mcpJson } from "./helpers.js";
+import { mcpJson, simulateWorkerdEnterWithGap, type WorkerdEnterWithGap } from "./helpers.js";
 
 interface CapturedConfig {
   clientId: string;
@@ -41,13 +40,13 @@ vi.mock("@wyre-ai/node-ninjaone", () => ({
   NinjaOneClient: NinjaOneClientMock,
 }));
 
+let enterWithGap: WorkerdEnterWithGap;
+
 beforeEach(() => {
   // Same workerd gap as worker.test.ts: enterWith throws. Gateway mode must
   // still isolate tenants via AsyncLocalStorage.run(), not a module-level
   // server/credential fallback that would pass this only by accident.
-  vi.spyOn(AsyncLocalStorage.prototype, "enterWith").mockImplementation(() => {
-    throw new Error("asyncLocalStorage.enterWith() is not implemented");
-  });
+  enterWithGap = simulateWorkerdEnterWithGap();
   NinjaOneClientMock.mockReset();
   NinjaOneClientMock.mockImplementation(function (config: CapturedConfig) {
     return {
@@ -130,6 +129,6 @@ describe("Gateway mode: cross-tenant credential isolation under real concurrency
 
     expect(textA).toContain("org-for-tenant-a-id");
     expect(textA).not.toContain("tenant-b-id");
-    expect(AsyncLocalStorage.prototype.enterWith).not.toHaveBeenCalled();
+    expect(enterWithGap.calledDirectly()).toBe(false);
   });
 });
