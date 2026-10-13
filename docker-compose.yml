@@ -1,6 +1,12 @@
 
 
 services:
+  # Gateway mode. Client id and secret arrive per request on X-Ninja-* headers.
+  # Do not set NINJAONE_CLIENT_ID, NINJAONE_CLIENT_SECRET, or env_file here —
+  # that would put static vendor credentials in the container. The project .env
+  # is used only for Compose interpolation of CONDUIT_S2S_SECRET (and optional
+  # non-secret settings). For AUTH_MODE=env, pass NINJAONE_CLIENT_ID and
+  # NINJAONE_CLIENT_SECRET on that process instead (see the README).
   ninjaone-mcp:
     build:
       context: .
@@ -9,22 +15,19 @@ services:
     image: ninjaone-mcp:latest
     container_name: ninjaone-mcp-server
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      # Required NinjaOne credentials (set these in .env file)
-      - NINJAONE_CLIENT_ID=${NINJAONE_CLIENT_ID}
-      - NINJAONE_CLIENT_SECRET=${NINJAONE_CLIENT_SECRET}
-
-      # Optional configuration
+      - MCP_TRANSPORT=http
+      - MCP_HTTP_HOST=0.0.0.0
+      - MCP_HTTP_PORT=8080
+      - AUTH_MODE=gateway
+      - CONDUIT_S2S_SECRET=${CONDUIT_S2S_SECRET:?set CONDUIT_S2S_SECRET}
+      # Region is not a credential. Per-request X-Ninja-Region overrides it.
       - NINJAONE_REGION=${NINJAONE_REGION:-us}
       - MCP_SERVER_NAME=${MCP_SERVER_NAME:-ninjaone-mcp}
-
-      # Logging configuration
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - NODE_ENV=production
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       # Mount logs directory for persistence
       - ninjaone-mcp-logs:/app/logs
@@ -87,8 +90,9 @@ volumes:
   ninjaone-mcp-dev-logs:
     driver: local
 
-# Example .env file structure (create this file with your actual credentials):
-# NINJAONE_CLIENT_ID=your-client-id
-# NINJAONE_CLIENT_SECRET=your-client-secret
+# Copy .env.example. Compose interpolates CONDUIT_S2S_SECRET from that file
+# and refuses to start the gateway service when it is unset. Do not put
+# NINJAONE_CLIENT_ID or NINJAONE_CLIENT_SECRET on the gateway service.
+# CONDUIT_S2S_SECRET=
 # NINJAONE_REGION=us
 # LOG_LEVEL=info

@@ -32,8 +32,9 @@ A Model Context Protocol (MCP) server for interacting with NinjaOne, featuring a
 > Standard Streamable HTTP transport (`src/worker.ts`). After deploying, set your
 > NinjaOne credentials as secrets — `NINJAONE_CLIENT_ID`, `NINJAONE_CLIENT_SECRET`,
 > and optionally `NINJAONE_REGION` — or set `AUTH_MODE=gateway` to take credentials
-> per-request from `X-Ninja-*` headers. The MCP endpoint is `/mcp`; `/health` is an
-> unauthenticated liveness probe.
+> per-request from `X-Ninja-*` headers. HTTP also requires `CONDUIT_S2S_SECRET`
+> and a valid `X-Gateway-S2S` signature on `/mcp` (see [HTTP authentication](#http-authentication)).
+> The MCP endpoint is `/mcp`; `/health` is an unauthenticated liveness probe.
 
 ## Architecture
 
@@ -70,14 +71,36 @@ each [release](https://github.com/WYRE-AI/ninjaone-mcp/releases).
 
 ## Configuration
 
-Set the following environment variables:
+Copy [`.env.example`](.env.example) and set the variables below.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `NINJAONE_CLIENT_ID` | Yes | OAuth 2.0 Client ID |
-| `NINJAONE_CLIENT_SECRET` | Yes | OAuth 2.0 Client Secret |
+| `NINJAONE_CLIENT_ID` | For stdio and `AUTH_MODE=env` | OAuth 2.0 Client ID |
+| `NINJAONE_CLIENT_SECRET` | For stdio and `AUTH_MODE=env` | OAuth 2.0 Client Secret |
 | `NINJAONE_REGION` | No | Region: `us` (default), `eu`, `oc`, `ca`, `us2`, or `fed` |
 | `NINJAONE_SCOPES` | No | OAuth scopes to request. Defaults to `monitoring,management`. Set this if your API app is granted a narrower set — see [OAuth scopes](#oauth-scopes) |
+| `MCP_TRANSPORT` | No | `stdio` (default) or `http` |
+| `AUTH_MODE` | No | `gateway` (Docker image and Compose default) or `env`. Gateway mode requires `X-Ninja-Client-ID` and `X-Ninja-Client-Secret` on each `/mcp` request and never falls back to `NINJAONE_*`. `env` uses those variables only after S2S auth succeeds. |
+| `CONDUIT_S2S_SECRET` | Yes for HTTP | Service-to-service secret. The HTTP server logs an error and exits non-zero when this is empty or a known placeholder. Compose will not start without it. Never commit a real value. Generate one with `openssl rand -hex 32`. |
+| `MCP_ALLOW_INSECURE_DEV` | No | Set to exactly `1` only for local development to start HTTP without `CONDUIT_S2S_SECRET`. The process logs a warning, does not enforce `X-Gateway-S2S`, and binds `127.0.0.1` only. A known placeholder secret is still refused. |
+| `MCP_HTTP_HOST` | No | Bind address when `MCP_TRANSPORT=http`. Defaults to `127.0.0.1`. Honored only when `CONDUIT_S2S_SECRET` is set. The container image sets `0.0.0.0`. |
+| `MCP_HTTP_PORT` | No | HTTP port. Defaults to `8080`. |
+
+`/health` and `/healthz` stay unauthenticated and do not read credentials. The stdio transport does not use `CONDUIT_S2S_SECRET`.
+
+### HTTP authentication
+
+With `MCP_TRANSPORT=http` and `CONDUIT_S2S_SECRET` set, every `/mcp` request must include:
+
+```
+X-Gateway-S2S: t=<unix seconds>,v1=<hex>
+```
+
+`v1` is HMAC-SHA256 of the ASCII string `t=<unix seconds>` (the same `t=` prefix that is sent in the header), keyed with `CONDUIT_S2S_SECRET`, and hex-encoded. The timestamp must be within 300 seconds of the server clock. A missing or invalid header returns 401 before any vendor credential is read. The secret value is never written to logs.
+
+In `AUTH_MODE=gateway`, `/mcp` also requires `X-Ninja-Client-ID` and `X-Ninja-Client-Secret` (`X-Ninja-Region` is optional). Those headers are the only credential source for that request. A request missing them returns 401 and does not fall back to `NINJAONE_CLIENT_ID` / `NINJAONE_CLIENT_SECRET`.
+
+`MCP_ALLOW_INSECURE_DEV=1` skips the `X-Gateway-S2S` check for local development and forces the listener onto `127.0.0.1`. A non-loopback `MCP_HTTP_HOST`, including `0.0.0.0`, is ignored in that mode and the override is logged.
 
 ### NinjaOne API Regions
 
@@ -126,10 +149,42 @@ Add to your Claude Desktop `claude_desktop_config.json`:
 
 ### Docker
 
+The image listens on `0.0.0.0` inside the container (`MCP_HTTP_HOST`) and defaults to `AUTH_MODE=gateway`. Publish the port on loopback and pass the S2S secret. In gateway mode, NinjaOne credentials arrive on each request as `X-Ninja-*` headers; they are not read from the environment.
+
 ```bash
 docker build -t ninjaone-mcp .
-docker run -e NINJAONE_CLIENT_ID=xxx -e NINJAONE_CLIENT_SECRET=xxx -e NINJAONE_REGION=us ninjaone-mcp
+docker run \
+  -e CONDUIT_S2S_SECRET="$CONDUIT_S2S_SECRET" \
+  -p 127.0.0.1:8080:8080 \
+  ninjaone-mcp
 ```
+
+Compose refuses to start when `CONDUIT_S2S_SECRET` is unset, defaults `AUTH_MODE` to `gateway`, publishes `127.0.0.1:8080:8080`, and does not inject `NINJAONE_CLIENT_ID` or `NINJAONE_CLIENT_SECRET`:
+
+```bash
+CONDUIT_S2S_SECRET="$CONDUIT_S2S_SECRET" docker compose up
+```
+
+Single-tenant HTTP (`AUTH_MODE=env`) still requires the S2S secret, then uses `NINJAONE_CLIENT_ID` and `NINJAONE_CLIENT_SECRET`:
+
+```bash
+docker run \
+  -e CONDUIT_S2S_SECRET="$CONDUIT_S2S_SECRET" \
+  -e AUTH_MODE=env \
+  -e NINJAONE_CLIENT_ID=your-client-id \
+  -e NINJAONE_CLIENT_SECRET=your-client-secret \
+  -e NINJAONE_REGION=us \
+  -p 127.0.0.1:8080:8080 \
+  ninjaone-mcp
+```
+
+Local HTTP without a secret is development-only. It binds `127.0.0.1` only and logs a warning:
+
+```bash
+MCP_TRANSPORT=http MCP_ALLOW_INSECURE_DEV=1 npm start
+```
+
+Sign each `/mcp` request with `X-Gateway-S2S` as described in [HTTP authentication](#http-authentication). In gateway mode, also send `X-Ninja-Client-ID` and `X-Ninja-Client-Secret`.
 
 ## Available Domains
 

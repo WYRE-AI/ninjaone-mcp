@@ -123,6 +123,10 @@ async function main() {
       MCP_TRANSPORT: "http",
       MCP_HTTP_PORT: String(PORT),
       MCP_HTTP_HOST: "127.0.0.1",
+      // Local smoke only. HTTP refuses to start without a real S2S secret;
+      // this bypass skips X-Gateway-S2S and stays on loopback.
+      MCP_ALLOW_INSECURE_DEV: "1",
+      CONDUIT_S2S_SECRET: "",
       NINJAONE_CLIENT_ID: "smoke-dummy-id",
       NINJAONE_CLIENT_SECRET: "smoke-dummy-secret",
       NINJAONE_REGION: "us",
