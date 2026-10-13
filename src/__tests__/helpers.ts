@@ -2,6 +2,89 @@
  * Shared test helpers (not collected by vitest — no .test suffix).
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
+import { vi } from "vitest";
+
+export interface WorkerdEnterWithGap {
+  /**
+   * True if `enterWith()` was ever called directly (outside Node's own
+   * `run()` frame) — the regression this simulation exists to catch.
+   */
+  calledDirectly(): boolean;
+}
+
+/**
+ * Simulate workerd's AsyncLocalStorage gap for the duration of one test:
+ * `run()`/`getStore()` work, a *direct* `enterWith()` call throws, matching
+ * production Workers (issue #103).
+ *
+ * A naive `vi.spyOn(AsyncLocalStorage.prototype, "enterWith")` that always
+ * throws is unsound on Node (verified on v26): `AsyncLocalStorage.run()`
+ * calls `this.enterWith()` internally as its own implementation detail, so
+ * an unconditional throw breaks every `run()` call too — not just a
+ * regression that calls `enterWith()` directly, which is the only thing
+ * workerd's real gap (and this simulation) is supposed to catch. Track
+ * whether we're inside Node's own `run()` frame and only reject calls
+ * outside of it; callers that want a regression-guard assertion should use
+ * the returned `calledDirectly()`, not `enterWith`'s own mock call count
+ * (which now includes legitimate internal passthrough calls).
+ *
+ * The "inside run()" window is scoped tightly to Node's own setup/teardown
+ * around the callback, not the callback's own execution: `insideNativeRun`
+ * is decremented immediately before invoking the callback and restored only
+ * once the callback's *synchronous* portion returns. Without this, a direct
+ * `enterWith()` call made synchronously from inside a `run()` callback
+ * (before its first `await`) would be indistinguishable from Node's own
+ * internal call and silently pass through uncaught — verified with a
+ * standalone repro before narrowing this.
+ */
+export function simulateWorkerdEnterWithGap(): WorkerdEnterWithGap {
+  const originalRun = AsyncLocalStorage.prototype.run;
+  const originalEnterWith = AsyncLocalStorage.prototype.enterWith;
+  let insideNativeRun = 0;
+  let directCalls = 0;
+
+  vi.spyOn(AsyncLocalStorage.prototype, "run").mockImplementation(function (
+    this: AsyncLocalStorage<unknown>,
+    ...args: Parameters<AsyncLocalStorage<unknown>["run"]>
+  ) {
+    const [store, callback, ...runArgs] = args;
+    insideNativeRun++;
+    try {
+      return originalRun.call(
+        this,
+        store,
+        function (this: unknown, ...callbackArgs: unknown[]) {
+          insideNativeRun--;
+          try {
+            return Reflect.apply(callback, this, callbackArgs);
+          } finally {
+            insideNativeRun++;
+          }
+        },
+        ...runArgs
+      );
+    } finally {
+      insideNativeRun--;
+    }
+  });
+
+  vi.spyOn(AsyncLocalStorage.prototype, "enterWith").mockImplementation(function (
+    this: AsyncLocalStorage<unknown>,
+    ...args: Parameters<AsyncLocalStorage<unknown>["enterWith"]>
+  ) {
+    if (insideNativeRun > 0) {
+      return originalEnterWith.apply(this, args);
+    }
+    directCalls++;
+    throw new Error("asyncLocalStorage.enterWith() is not implemented");
+  });
+
+  return {
+    calledDirectly: () => directCalls > 0,
+  };
+}
+
 /**
  * Decode the JSON-RPC message from a streamable-HTTP response body.
  *

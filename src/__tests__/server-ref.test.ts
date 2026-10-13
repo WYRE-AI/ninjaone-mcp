@@ -27,6 +27,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Server } from "@modelcontextprotocol/server";
 import { bindServerRef, getServerRef } from "../utils/server-ref.js";
 import { elicitConfirmation } from "../utils/elicitation.js";
+import { simulateWorkerdEnterWithGap, type WorkerdEnterWithGap } from "./helpers.js";
 
 /** A deferred promise the test can resolve on demand, for a deterministic forced interleave. */
 function createDeferred<T = void>() {
@@ -69,17 +70,32 @@ function createFakeServer(tenantId: string): FakeServer {
 }
 
 describe("server-ref cross-tenant isolation", () => {
+  let enterWithGap: WorkerdEnterWithGap;
+
   beforeEach(() => {
     // workerd throws from enterWith; run()/getStore() still work. If the
     // implementation calls enterWith, these tests fail the way Workers does.
-    vi.spyOn(AsyncLocalStorage.prototype, "enterWith").mockImplementation(() => {
-      throw new Error("asyncLocalStorage.enterWith() is not implemented");
-    });
+    enterWithGap = simulateWorkerdEnterWithGap();
   });
 
   it("getServerRef returns null outside of any bound context", () => {
     expect(getServerRef()).toBeNull();
   });
+
+  it(
+    "treats a direct enterWith() call made synchronously inside a run() " +
+      "callback (before any await) as a direct call, not internal Node " +
+      "passthrough -- the exact shape a regression in bindServerRef would take",
+    () => {
+      const scratch = new AsyncLocalStorage<string>();
+      expect(() => {
+        scratch.run("store", () => {
+          scratch.enterWith("malicious");
+        });
+      }).toThrow("asyncLocalStorage.enterWith() is not implemented");
+      expect(enterWithGap.calledDirectly()).toBe(true);
+    }
+  );
 
   it("resolves the server inside a handler invoked after bindServerRef returns", async () => {
     const server = createFakeServer("tenant-X");
@@ -97,7 +113,7 @@ describe("server-ref cross-tenant isolation", () => {
     expect(getServerRef()).toBeNull();
     await expect(server.invoke("tools/call")).resolves.toBe("ok");
     expect(getServerRef()).toBeNull();
-    expect(AsyncLocalStorage.prototype.enterWith).not.toHaveBeenCalled();
+    expect(enterWithGap.calledDirectly()).toBe(false);
   });
 
   it(
@@ -156,7 +172,7 @@ describe("server-ref cross-tenant isolation", () => {
         expect(call[0].message).not.toBe("Confirm tenant A's sensitive action?");
       }
 
-      expect(AsyncLocalStorage.prototype.enterWith).not.toHaveBeenCalled();
+      expect(enterWithGap.calledDirectly()).toBe(false);
     }
   );
 

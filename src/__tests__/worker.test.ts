@@ -6,10 +6,9 @@
  * transport the Worker uses in production.
  */
 
-import { AsyncLocalStorage } from "node:async_hooks";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import worker, { type Env } from "../worker.js";
-import { mcpJson } from "./helpers.js";
+import { mcpJson, simulateWorkerdEnterWithGap, type WorkerdEnterWithGap } from "./helpers.js";
 
 const MCP_HEADERS = {
   Accept: "application/json, text/event-stream",
@@ -28,14 +27,14 @@ async function mcp(body: unknown, env: Env = {}): Promise<Response> {
 }
 
 describe("Cloudflare Worker entrypoint", () => {
+  let enterWithGap: WorkerdEnterWithGap;
+
   beforeEach(() => {
     // workerd's node:async_hooks implements AsyncLocalStorage.run()/getStore()
     // and throws from enterWith(). This Node harness does the same so a
     // regression that calls enterWith fails the /mcp path with HTTP 500,
     // matching production Workers (issue #103).
-    vi.spyOn(AsyncLocalStorage.prototype, "enterWith").mockImplementation(() => {
-      throw new Error("asyncLocalStorage.enterWith() is not implemented");
-    });
+    enterWithGap = simulateWorkerdEnterWithGap();
   });
 
   it("serves a shallow health probe", async () => {
@@ -72,7 +71,7 @@ describe("Cloudflare Worker entrypoint", () => {
     expect(res.status).toBe(200);
     const body = (await mcpJson(res)) as { result?: { serverInfo?: { name?: string } } };
     expect(body.result?.serverInfo?.name).toBe("ninjaone-mcp");
-    expect(AsyncLocalStorage.prototype.enterWith).not.toHaveBeenCalled();
+    expect(enterWithGap.calledDirectly()).toBe(false);
   });
 
   it("lists all tools without credentials", async () => {
