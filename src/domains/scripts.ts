@@ -182,11 +182,15 @@ function auditScriptRun(entry: {
   deviceId: number;
   scriptKey: string;
   runAs: string | undefined;
+  /**
+   * `submitted` means the vendor accepted the run request. The endpoint
+   * may still be executing; this line does not record completion.
+   */
   outcome:
     | "denied-unauthenticated"
     | "denied-not-allowlisted"
     | "declined"
-    | "executed"
+    | "submitted"
     | "failed";
   /**
    * Which confirmation path served the call -- "elicitation" (a human was
@@ -384,7 +388,7 @@ async function handleCall(
       logger.info("API call: scripts.run", { deviceId, script: key, runAs });
       try {
         await client.scripts.run(deviceId, { type, id, uid, parameters, runAs });
-        auditScriptRun({ deviceId, scriptKey: key, runAs, outcome: "executed", confirmationPath });
+        auditScriptRun({ deviceId, scriptKey: key, runAs, outcome: "submitted", confirmationPath });
       } catch (error) {
         auditScriptRun({
           deviceId,
