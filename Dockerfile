@@ -57,18 +57,20 @@ EXPOSE 8080
 # MCP_HTTP_HOST=0.0.0.0 (IPv4-only), so an IPv6 probe gets connection refused
 # and the container reports unhealthy forever even though the endpoint is
 # fine. Read the port from MCP_HTTP_PORT so a non-default port doesn't hit
-# the same failure mode.
+# the same failure mode. 0.0.0.0 is safe here only because startup refuses to
+# listen without a real CONDUIT_S2S_SECRET.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider "http://127.0.0.1:${MCP_HTTP_PORT:-8080}/health" || exit 1
 
-# Set environment variables
+# Set environment variables. 0.0.0.0 is safe only because HTTP startup refuses
+# to listen without a real CONDUIT_S2S_SECRET. AUTH_MODE=gateway never falls
+# back to image env credentials.
 ENV NODE_ENV=production
 ENV LOG_LEVEL=info
 ENV MCP_TRANSPORT=http
 ENV MCP_HTTP_PORT=8080
 ENV MCP_HTTP_HOST=0.0.0.0
-# Default to env mode for backward compatibility; set to 'gateway' for hosted deployment
-ENV AUTH_MODE=env
+ENV AUTH_MODE=gateway
 
 # Define volume for logs
 VOLUME ["/app/logs"]

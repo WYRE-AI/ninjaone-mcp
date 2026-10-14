@@ -66,7 +66,7 @@ describe("verifyS2sHeader", () => {
     expect(verifyS2sHeader(undefined, ninjaoneSubkey)).toBe(false);
   });
 
-  it("rejects when the secret is empty (dark-by-default guarantee)", () => {
+  it("rejects when the secret is empty", () => {
     const now = Math.floor(Date.now() / 1000);
     const header = mintHeader(ninjaoneSubkey, now);
     expect(verifyS2sHeader(header, "")).toBe(false);
