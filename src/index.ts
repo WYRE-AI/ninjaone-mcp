@@ -101,6 +101,11 @@ async function startHttpTransport(): Promise<void> {
       // directly. In that case the headers stay untrusted and scripts_run
       // is deny-all until the gateway secret is configured.
       trustScriptPolicyHeaders: scriptPolicyHeadersTrusted(isGatewayMode, S2S_SECRET),
+      // Remote script execution needs an authenticated caller. S2S is that
+      // caller for server-held env credentials; the opt-in flag is a second
+      // gate and defaults off. Neither is implied by an elicitation answer.
+      s2sEnforced: S2S_SECRET !== "",
+      allowServerHeldScriptExecution: process.env.NINJAONE_ALLOW_SERVER_HELD_SCRIPT_EXECUTION,
     }),
     {
       legacy: "stateless",

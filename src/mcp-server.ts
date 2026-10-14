@@ -23,6 +23,11 @@ import {
   type CallToolResult,
 } from "./utils/types.js";
 import {
+  resolveHttpScriptCaller,
+  runWithScriptCaller,
+  type ScriptCallerAuth,
+} from "./utils/script-caller.js";
+import {
   getCredentials,
   runWithCredentials,
   formatToolError,
@@ -262,7 +267,22 @@ export function makeMcpServerFactory(options: {
   envCredentials?: NinjaOneCredentials;
   trustScriptPolicyHeaders?: boolean;
   scriptPolicy?: GatewayCredentialOptions["scriptPolicy"];
+  /**
+   * True when this process rejects /mcp requests that fail
+   * `X-Gateway-S2S` verification. An empty `CONDUIT_S2S_SECRET` is false.
+   * Workers have no S2S check, so they pass false.
+   */
+  s2sEnforced?: boolean;
+  /**
+   * Raw `NINJAONE_ALLOW_SERVER_HELD_SCRIPT_EXECUTION`. Parsed fail-closed.
+   * Never taken from a request header. The flag does not authenticate a
+   * caller; script execution with server-held credentials also requires
+   * `s2sEnforced`.
+   */
+  allowServerHeldScriptExecution?: string;
 }): McpServerFactory {
+  const s2sEnforced = options.s2sEnforced === true;
+  const allowServerHeldScriptExecution = parseBooleanFlag(options.allowServerHeldScriptExecution);
   return (ctx) => {
     if (options.gatewayMode) {
       const { creds } = resolveGatewayCredentials(
@@ -272,9 +292,23 @@ export function makeMcpServerFactory(options: {
           scriptPolicy: options.scriptPolicy,
         }
       );
-      return createMcpServer(creds);
+      return createMcpServer(creds, {
+        scriptCaller: resolveHttpScriptCaller({
+          gatewayMode: true,
+          hasPerRequestCredentials: creds !== undefined,
+          s2sEnforced,
+          allowServerHeldScriptExecution,
+        }),
+      });
     }
-    return createMcpServer(options.envCredentials);
+    return createMcpServer(options.envCredentials, {
+      scriptCaller: resolveHttpScriptCaller({
+        gatewayMode: false,
+        hasPerRequestCredentials: false,
+        s2sEnforced,
+        allowServerHeldScriptExecution,
+      }),
+    });
   };
 }
 
@@ -287,8 +321,15 @@ export function makeMcpServerFactory(options: {
  *   reading from process.env.
  */
 export async function createMcpServer(
-  credentialOverrides?: NinjaOneCredentials
+  credentialOverrides?: NinjaOneCredentials,
+  options?: { scriptCaller?: ScriptCallerAuth }
 ): Promise<Server> {
+  // stdio omits this and stays "local" (the process owner is the caller).
+  // HTTP factories always pass an explicit decision.
+  const scriptCaller: ScriptCallerAuth = options?.scriptCaller ?? {
+    effect: "allow",
+    via: "local",
+  };
   const allDomainTools = await getAllDomainTools();
 
   const server = new Server(
@@ -465,7 +506,13 @@ export async function createMcpServer(
       }
     };
 
-    return credentialOverrides ? runWithCredentials(credentialOverrides, run) : run();
+    // Caller auth is fixed when this server is built (per HTTP request, or
+    // once for stdio). Tool arguments and the elicitation result do not
+    // change it. AsyncLocalStorage.run() binds the store for this handler's
+    // awaits; Workers do not implement enterWith().
+    return runWithScriptCaller(scriptCaller, () =>
+      credentialOverrides ? runWithCredentials(credentialOverrides, run) : run()
+    );
   });
 
   return server;

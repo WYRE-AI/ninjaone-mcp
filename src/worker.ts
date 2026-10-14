@@ -27,6 +27,11 @@
  *    - NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION (optional; unset/false
  *      means scripts_run refuses outright on a client with no elicitation
  *      support, rather than silently falling back to confirm:true)
+ *    - NINJAONE_ALLOW_SERVER_HELD_SCRIPT_EXECUTION (optional; literal
+ *      "true" only). This Worker does not verify X-Gateway-S2S, so the flag
+ *      cannot authorize env-mode script execution. Gateway mode is the
+ *      authenticated path: the request must present X-Ninja-Client-ID and
+ *      X-Ninja-Client-Secret. A client's elicitation answer is not that caller.
  *
  * `tools/list` and `initialize` work without credentials; only `tools/call`
  * requires them.
@@ -44,6 +49,7 @@ export interface Env {
   NINJAONE_REGION?: string;
   NINJAONE_ALLOWED_SCRIPT_IDS?: string;
   NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION?: string;
+  NINJAONE_ALLOW_SERVER_HELD_SCRIPT_EXECUTION?: string;
   AUTH_MODE?: string;
   LOG_LEVEL?: string;
 }
@@ -104,6 +110,12 @@ function getMcpHandler(env: Env): McpHttpHandler {
           allowedScriptIds: env.NINJAONE_ALLOWED_SCRIPT_IDS,
           allowSelfAttestedConfirmation: env.NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION,
         },
+        // No S2S verifier on this entrypoint. Env-mode (server-held)
+        // script execution therefore has no authenticated caller and is
+        // refused. The opt-in flag is still parsed so the refusal reason
+        // matches Node, and so the flag cannot be mistaken for caller auth.
+        s2sEnforced: false,
+        allowServerHeldScriptExecution: env.NINJAONE_ALLOW_SERVER_HELD_SCRIPT_EXECUTION,
       }),
       { legacy: "stateless" }
     );

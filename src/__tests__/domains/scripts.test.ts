@@ -44,6 +44,18 @@ vi.mock("../../utils/elicitation.js", () => ({
 }));
 
 import { scriptsHandler } from "../../domains/scripts.js";
+import {
+  runWithScriptCaller,
+  type ScriptCallerAuth,
+} from "../../utils/script-caller.js";
+
+function callRun(
+  args: Record<string, unknown>,
+  caller?: ScriptCallerAuth
+): Promise<Awaited<ReturnType<typeof scriptsHandler.handleCall>>> {
+  const exec = () => scriptsHandler.handleCall("ninjaone_scripts_run", args);
+  return caller ? runWithScriptCaller(caller, exec) : exec();
+}
 
 function baseCreds(overrides: Partial<NonNullable<typeof currentCreds>> = {}) {
   return {
@@ -111,17 +123,114 @@ describe("Scripts Domain Handler", () => {
       mockElicitConfirmation.mockResolvedValue({ status: "accepted", confirm: true });
       mockScriptsRun.mockResolvedValue(undefined);
 
-      const result = await scriptsHandler.handleCall("ninjaone_scripts_run", runArgs);
+      const parameters = "line1\n--force";
+      const result = await scriptsHandler.handleCall("ninjaone_scripts_run", {
+        ...runArgs,
+        parameters,
+        run_as: "LOCAL_ADMIN",
+      });
 
       expect(mockElicitConfirmation).toHaveBeenCalledTimes(1);
+      const prompt = mockElicitConfirmation.mock.calls[0]?.[0] as string;
+      expect(prompt).toContain("Device: 101");
+      expect(prompt).toContain("Script: SCRIPT:1234");
+      expect(prompt).toContain("Parameters: line1\\n--force");
+      expect(prompt).not.toContain("\n--force");
+      expect(prompt).toContain("Run as: LOCAL_ADMIN");
       expect(mockScriptsRun).toHaveBeenCalledWith(101, {
         type: "SCRIPT",
         id: 1234,
         uid: undefined,
-        parameters: undefined,
-        runAs: undefined,
+        parameters,
+        runAs: "LOCAL_ADMIN",
       });
       expect(result.isError).toBeUndefined();
+    });
+
+    it("shows omitted parameters and run_as as none", async () => {
+      currentCreds = baseCreds({ allowedScriptIds: new Set(["SCRIPT:1234"]) });
+      mockElicitConfirmation.mockResolvedValue({ status: "accepted", confirm: true });
+      mockScriptsRun.mockResolvedValue(undefined);
+
+      await scriptsHandler.handleCall("ninjaone_scripts_run", runArgs);
+
+      const prompt = mockElicitConfirmation.mock.calls[0]?.[0] as string;
+      expect(prompt).toContain("Parameters: (none)");
+      expect(prompt).toContain("Run as: (none)");
+    });
+
+    it("refuses HTTP execution with no authenticated caller before elicitation", async () => {
+      currentCreds = baseCreds({ allowedScriptIds: new Set(["SCRIPT:1234"]) });
+      mockElicitConfirmation.mockResolvedValue({ status: "accepted", confirm: true });
+
+      const result = await callRun(
+        { ...runArgs, confirm: true, parameters: "--force", run_as: "SYSTEM" },
+        { effect: "deny", reason: "unauthenticated" }
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("no authenticated caller");
+      expect(result.content[0]?.text).toContain("does not authenticate a caller");
+      expect(mockElicitConfirmation).not.toHaveBeenCalled();
+      expect(mockScriptsRun).not.toHaveBeenCalled();
+    });
+
+    it("refuses server-held HTTP credentials when the opt-in flag is off", async () => {
+      currentCreds = baseCreds({ allowedScriptIds: new Set(["SCRIPT:1234"]) });
+      mockElicitConfirmation.mockResolvedValue({ status: "accepted", confirm: true });
+
+      const result = await callRun(runArgs, {
+        effect: "deny",
+        reason: "server-held-opt-in-required",
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("NINJAONE_ALLOW_SERVER_HELD_SCRIPT_EXECUTION");
+      expect(result.content[0]?.text).toContain("not authorization");
+      expect(mockElicitConfirmation).not.toHaveBeenCalled();
+      expect(mockScriptsRun).not.toHaveBeenCalled();
+    });
+
+    it("allows a per-request gateway caller through to confirmation without the opt-in flag", async () => {
+      currentCreds = baseCreds({ allowedScriptIds: new Set(["ACTION:uid-1"]) });
+      mockElicitConfirmation.mockResolvedValue({ status: "accepted", confirm: true });
+      mockScriptsRun.mockResolvedValue(undefined);
+
+      const result = await callRun(
+        { device_id: 55, type: "ACTION", uid: "uid-1", parameters: "x", run_as: "SYSTEM" },
+        { effect: "allow", via: "per-request" }
+      );
+
+      expect(result.isError).toBeUndefined();
+      const prompt = mockElicitConfirmation.mock.calls[0]?.[0] as string;
+      expect(prompt).toContain("Device: 55");
+      expect(prompt).toContain("Script: ACTION:uid-1");
+      expect(prompt).toContain("Parameters: x");
+      expect(prompt).toContain("Run as: SYSTEM");
+      expect(mockScriptsRun).toHaveBeenCalledWith(55, {
+        type: "ACTION",
+        id: undefined,
+        uid: "uid-1",
+        parameters: "x",
+        runAs: "SYSTEM",
+      });
+    });
+
+    it("still requires confirmation when server-held execution was explicitly opted in", async () => {
+      currentCreds = baseCreds({
+        allowedScriptIds: new Set(["SCRIPT:1234"]),
+        allowSelfAttestedConfirmation: false,
+      });
+      mockElicitConfirmation.mockResolvedValue({ status: "unsupported" });
+
+      const result = await callRun(
+        { ...runArgs, confirm: true },
+        { effect: "allow", via: "server-held-opt-in" }
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("no interactive confirmation support");
+      expect(mockScriptsRun).not.toHaveBeenCalled();
     });
 
     it("cancels (not an error) when elicitation returns declined", async () => {

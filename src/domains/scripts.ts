@@ -4,17 +4,23 @@
  * Exposes NinjaOne's device scripting surface: listing what's available to
  * run, and running it. ninjaone_scripts_run executes code on a customer
  * endpoint -- the highest-blast-radius action this server exposes -- so it
- * carries three layers no other tool here has, all mandatory and all
+ * carries four layers no other tool here has, all mandatory and all
  * fail-closed:
  *
- * 1. Per-org script allowlist (checked against NINJAONE_ALLOWED_SCRIPT_IDS /
+ * 1. Authenticated caller on HTTP. stdio's process owner is the caller.
+ *    An HTTP client is not: gateway per-request credentials or an enforced
+ *    gateway signature (CONDUIT_S2S_SECRET) is required, and server-held
+ *    env credentials also require NINJAONE_ALLOW_SERVER_HELD_SCRIPT_EXECUTION
+ *    (default off). An elicitation answer is not that authorization.
+ * 2. Per-org script allowlist (checked against NINJAONE_ALLOWED_SCRIPT_IDS /
  *    the gateway's X-Ninja-Allowed-Script-Ids header). Unset, empty, or
  *    unparseable means deny-all, never allow-all -- there is no implicit
  *    default here, unlike scopes/region.
- * 2. Explicit confirmation before executing -- via MCP elicitation when the
- *    client supports it, otherwise a required `confirm: true` tool argument
- *    (see requireConfirmation() below for why both paths exist).
- * 3. A dedicated structured audit log line distinct from this server's
+ * 3. Explicit confirmation before executing -- via MCP elicitation when the
+ *    client supports it, otherwise a required `confirm: true` tool argument.
+ *    The prompt shows the device, script, parameters, and run-as role that
+ *    will be submitted. Confirmation does not grant the caller auth in layer 1.
+ * 4. A dedicated structured audit log line distinct from this server's
  *    normal API-call logging, because Conduit's gateway-level audit log
  *    does not capture full tool arguments for every vendor call the way it
  *    does the actor/org/tool-name/outcome tuple.
@@ -30,6 +36,7 @@ import type { ScriptEntryType } from "@wyre-ai/node-ninjaone";
 import { getClient, getCredentials, createClientDirect } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
 import { elicitConfirmation } from "../utils/elicitation.js";
+import { getScriptCallerAuth, scriptCallerRefusal } from "../utils/script-caller.js";
 
 /**
  * Get scripts domain tools
@@ -57,7 +64,7 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_scripts_run",
       description:
-        "Run an org-approved script or built-in action on a device (destructive action -- executes code on the customer endpoint). Only scripts the org has pre-approved can run; everything else is refused regardless of this tool's arguments.",
+        "Run an org-approved script or built-in action on a device (destructive action -- executes code on the customer endpoint). Only scripts the org has pre-approved can run; everything else is refused regardless of this tool's arguments. On HTTP, the caller must already be authenticated (gateway per-request credentials, or a gateway-signed request plus NINJAONE_ALLOW_SERVER_HELD_SCRIPT_EXECUTION for server-held credentials). Confirming the prompt does not authorize the run.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -107,6 +114,44 @@ function scriptKey(type: ScriptEntryType, idOrUid: number | string): string {
 }
 
 /**
+ * One-line rendering of a caller-controlled confirmation field.
+ *
+ * Newlines and other control characters are escaped so a parameter or
+ * run_as value cannot forge extra prompt lines. The escaped text is
+ * display-only; scripts.run receives the original string.
+ */
+function renderConfirmationValue(value: string | undefined): string {
+  if (typeof value !== "string" || value.length === 0) return "(none)";
+  let rendered = "";
+  for (const ch of value) {
+    const code = ch.charCodeAt(0);
+    if (ch === "\\") rendered += "\\\\";
+    else if (ch === "\r") rendered += "\\r";
+    else if (ch === "\n") rendered += "\\n";
+    else if (ch === "\t") rendered += "\\t";
+    else if (code < 0x20 || code === 0x7f) {
+      rendered += `\\u${code.toString(16).padStart(4, "0")}`;
+    } else rendered += ch;
+  }
+  return rendered;
+}
+
+function scriptRunConfirmationMessage(input: {
+  deviceId: number;
+  script: string;
+  parameters: string | undefined;
+  runAs: string | undefined;
+}): string {
+  return [
+    `Device: ${input.deviceId}`,
+    `Script: ${input.script}`,
+    `Parameters: ${renderConfirmationValue(input.parameters)}`,
+    `Run as: ${renderConfirmationValue(input.runAs)}`,
+    "This executes code on the customer's endpoint.",
+  ].join("\n");
+}
+
+/**
  * Validate the type/id/uid pairing the API itself doesn't reject. Returns an
  * error string, or null when the pairing is valid.
  */
@@ -137,7 +182,12 @@ function auditScriptRun(entry: {
   deviceId: number;
   scriptKey: string;
   runAs: string | undefined;
-  outcome: "denied-not-allowlisted" | "declined" | "executed" | "failed";
+  outcome:
+    | "denied-unauthenticated"
+    | "denied-not-allowlisted"
+    | "declined"
+    | "executed"
+    | "failed";
   /**
    * Which confirmation path served the call -- "elicitation" (a human was
    * actually asked via the MCP client) vs "self-attested" (the calling
@@ -215,7 +265,26 @@ async function handleCall(
         };
       }
 
-      // Layer 1: per-org allowlist. Unset/empty/unparseable means deny-all --
+      // Layer 1: authenticated caller on HTTP. Checked before the allowlist
+      // and before any confirmation prompt, so a client cannot answer its
+      // way into server-held credentials or learn whether a script is approved.
+      const caller = getScriptCallerAuth();
+      if (caller.effect === "deny") {
+        auditScriptRun({
+          deviceId,
+          scriptKey: key,
+          runAs,
+          outcome: "denied-unauthenticated",
+          confirmationPath: "none",
+          detail: caller.reason,
+        });
+        return {
+          content: [{ type: "text", text: scriptCallerRefusal(caller.reason) }],
+          isError: true,
+        };
+      }
+
+      // Layer 2: per-org allowlist. Unset/empty/unparseable means deny-all --
       // see parseAllowedScriptIds, there is no implicit "allow" default here.
       const allowed = creds.allowedScriptIds;
       if (!allowed || allowed.size === 0 || !allowed.has(key)) {
@@ -237,7 +306,7 @@ async function handleCall(
         };
       }
 
-      // Layer 2: explicit confirmation, mandatory on every call regardless
+      // Layer 3: explicit confirmation, mandatory on every call regardless
       // of which path serves it. Self-attestation is only available when
       // the client cannot be asked at all (`unsupported`). A decline, a
       // cancellation, an unchecked confirm box, and any elicitation error
@@ -252,7 +321,12 @@ async function handleCall(
       // weaker one. Both the path taken and the outcome go into the audit
       // entry, so "was this human-confirmed" is answerable after the fact.
       const elicited = await elicitConfirmation(
-        `Run ${type.toLowerCase()} ${key} on device ${deviceId}? This executes code on the customer's endpoint.`
+        scriptRunConfirmationMessage({
+          deviceId,
+          script: key,
+          parameters,
+          runAs,
+        })
       );
 
       let confirmationPath: "elicitation" | "self-attested" | "none";
@@ -296,7 +370,7 @@ async function handleCall(
         };
       }
 
-      // Layer 3: run with a one-off elevated-scope client. "control" is
+      // Layer 4: run with a one-off elevated-scope client. "control" is
       // requested only for this call, on top of whatever scopes this
       // request's credentials already carry -- never on the shared/cached
       // client, so no other tool call is affected. If the org's NinjaOne
