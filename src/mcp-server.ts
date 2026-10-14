@@ -179,14 +179,24 @@ export function buildCredentials(
   };
 }
 
+/**
+ * Script-policy headers are the gateway's per-tenant channel only when this
+ * process is in gateway mode and is enforcing `X-Gateway-S2S`. An empty
+ * `CONDUIT_S2S_SECRET` leaves that check dark, so the headers stay untrusted
+ * and `scripts_run` is deny-all.
+ */
+export function scriptPolicyHeadersTrusted(gatewayMode: boolean, s2sSecret: string): boolean {
+  return gatewayMode && s2sSecret !== "";
+}
+
 export interface GatewayCredentialOptions {
   /**
    * Read script policy from `X-Ninja-Allowed-Script-Ids` and
-   * `X-Ninja-Allow-Self-Attested-Confirmation`. Only the Node HTTP entry
-   * sets this: those headers are Conduit's per-tenant policy channel, and
-   * that entry rejects requests that fail `X-Gateway-S2S` when
-   * `CONDUIT_S2S_SECRET` is set. Defaults to false so a public caller
-   * cannot widen the allowlist or turn on self-attested confirmation.
+   * `X-Ninja-Allow-Self-Attested-Confirmation`. The Node HTTP entry sets
+   * this only when gateway mode is on and `CONDUIT_S2S_SECRET` is
+   * non-empty, so the headers are the authenticated gateway's per-tenant
+   * channel. Defaults to false: a public caller cannot widen the
+   * allowlist or turn on self-attested confirmation.
    */
   trustScriptPolicyHeaders?: boolean;
   /**

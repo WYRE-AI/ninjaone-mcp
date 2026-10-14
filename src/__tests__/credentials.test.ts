@@ -4,7 +4,11 @@
  * ignored unless the caller (the Node HTTP entry) opts in.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { buildCredentials, resolveGatewayCredentials } from "../mcp-server.js";
+import {
+  buildCredentials,
+  resolveGatewayCredentials,
+  scriptPolicyHeadersTrusted,
+} from "../mcp-server.js";
 
 const ENV_KEYS = [
   "NINJAONE_ALLOWED_SCRIPT_IDS",
@@ -86,5 +90,13 @@ describe("resolveGatewayCredentials script policy", () => {
     const trusted = resolveGatewayCredentials(getHeader, { trustScriptPolicyHeaders: true });
     expect(trusted.creds?.allowedScriptIds).toEqual(new Set(["SCRIPT:42"]));
     expect(trusted.creds?.allowSelfAttestedConfirmation).toBe(true);
+  });
+});
+
+describe("scriptPolicyHeadersTrusted", () => {
+  it("trusts policy headers only when gateway mode is enforcing S2S", () => {
+    expect(scriptPolicyHeadersTrusted(true, "derived-subkey")).toBe(true);
+    expect(scriptPolicyHeadersTrusted(true, "")).toBe(false);
+    expect(scriptPolicyHeadersTrusted(false, "derived-subkey")).toBe(false);
   });
 });

@@ -34,6 +34,7 @@ import {
   createMcpServer,
   makeMcpServerFactory,
   resolveGatewayCredentials,
+  scriptPolicyHeadersTrusted,
 } from "./mcp-server.js";
 import { preflightAuthCheck } from "./utils/client.js";
 import { logger } from "./utils/logger.js";
@@ -94,11 +95,12 @@ async function startHttpTransport(): Promise<void> {
   const mcpHandler = createMcpHandler(
     makeMcpServerFactory({
       gatewayMode: isGatewayMode,
-      // This process is the gateway's target. Script-policy headers are
-      // Conduit's per-tenant allowlist, not a public client control. The
-      // Worker entry leaves this off. Missing headers stay deny-all; they
-      // do not inherit NINJAONE_ALLOWED_SCRIPT_IDS from the environment.
-      trustScriptPolicyHeaders: true,
+      // Script-policy headers are Conduit's per-tenant allowlist, but only
+      // after X-Gateway-S2S is enforced. An empty CONDUIT_S2S_SECRET leaves
+      // that check dark, so a reachable client could set the allowlist
+      // directly. In that case the headers stay untrusted and scripts_run
+      // is deny-all until the gateway secret is configured.
+      trustScriptPolicyHeaders: scriptPolicyHeadersTrusted(isGatewayMode, S2S_SECRET),
     }),
     {
       legacy: "stateless",
