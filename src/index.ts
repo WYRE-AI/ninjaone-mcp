@@ -92,7 +92,14 @@ async function startHttpTransport(): Promise<void> {
   // traffic natively. Never use legacy: 'reject' here — it would turn away
   // every pre-envelope client.
   const mcpHandler = createMcpHandler(
-    makeMcpServerFactory({ gatewayMode: isGatewayMode }),
+    makeMcpServerFactory({
+      gatewayMode: isGatewayMode,
+      // This process is the gateway's target. Script-policy headers are
+      // Conduit's per-tenant allowlist, not a public client control. The
+      // Worker entry leaves this off. Missing headers stay deny-all; they
+      // do not inherit NINJAONE_ALLOWED_SCRIPT_IDS from the environment.
+      trustScriptPolicyHeaders: true,
+    }),
     {
       legacy: "stateless",
       onerror: (error) => logger.error("MCP serving error", { error: error.message }),

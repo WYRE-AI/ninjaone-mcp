@@ -238,8 +238,11 @@ async function handleCall(
       }
 
       // Layer 2: explicit confirmation, mandatory on every call regardless
-      // of which path serves it. elicitConfirmation() returns null when the
-      // connected client has no elicitation support at all (not "declined").
+      // of which path serves it. Self-attestation is only available when
+      // the client cannot be asked at all (`unsupported`). A decline, a
+      // cancellation, an unchecked confirm box, and any elicitation error
+      // are refusals — they must not fall through to confirm:true, or the
+      // agent can override a human who already said no.
       //
       // The confirm:true fallback is itself gated by an ops-only flag
       // (allowSelfAttestedConfirmation, default false) -- elicitation and
@@ -254,14 +257,19 @@ async function handleCall(
 
       let confirmationPath: "elicitation" | "self-attested" | "none";
       let confirmed: boolean;
-      if (elicited !== null) {
+      if (elicited.status === "unsupported") {
+        if (creds.allowSelfAttestedConfirmation) {
+          confirmationPath = "self-attested";
+          confirmed = confirmArg === true;
+        } else {
+          confirmationPath = "none";
+          confirmed = false;
+        }
+      } else if (elicited.status === "accepted") {
         confirmationPath = "elicitation";
-        confirmed = elicited === true;
-      } else if (creds.allowSelfAttestedConfirmation) {
-        confirmationPath = "self-attested";
-        confirmed = confirmArg === true;
+        confirmed = elicited.confirm === true;
       } else {
-        confirmationPath = "none";
+        confirmationPath = "elicitation";
         confirmed = false;
       }
 
@@ -272,20 +280,19 @@ async function handleCall(
           runAs,
           outcome: "declined",
           confirmationPath,
+          detail: elicited.status === "error" ? elicited.message : undefined,
         });
+        const text =
+          elicited.status === "error"
+            ? `Refused -- confirmation failed (${elicited.message}). The script was not run.`
+            : confirmationPath === "none"
+              ? "Refused -- this client has no interactive confirmation support, and self-attested confirmation (confirm: true) is not enabled for this org. Script execution requires a human-confirmed path; contact your account team if self-attested confirmation should be enabled."
+              : confirmationPath === "self-attested"
+                ? "Cancelled -- scripts_run requires confirm: true to be passed explicitly once the end user has agreed to run this script."
+                : "Cancelled -- script run was not confirmed.";
         return {
-          content: [
-            {
-              type: "text",
-              text:
-                confirmationPath === "none"
-                  ? "Refused -- this client has no interactive confirmation support, and self-attested confirmation (confirm: true) is not enabled for this org. Script execution requires a human-confirmed path; contact your account team if self-attested confirmation should be enabled."
-                  : confirmationPath === "self-attested"
-                    ? "Cancelled -- scripts_run requires confirm: true to be passed explicitly once the end user has agreed to run this script."
-                    : "Cancelled -- script run was not confirmed.",
-            },
-          ],
-          isError: confirmationPath === "none",
+          content: [{ type: "text", text }],
+          isError: confirmationPath === "none" || elicited.status === "error",
         };
       }
 

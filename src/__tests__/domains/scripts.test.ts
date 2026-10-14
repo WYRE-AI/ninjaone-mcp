@@ -108,7 +108,7 @@ describe("Scripts Domain Handler", () => {
 
     it("runs an allowlisted script after elicitation confirms", async () => {
       currentCreds = baseCreds({ allowedScriptIds: new Set(["SCRIPT:1234"]) });
-      mockElicitConfirmation.mockResolvedValue(true);
+      mockElicitConfirmation.mockResolvedValue({ status: "accepted", confirm: true });
       mockScriptsRun.mockResolvedValue(undefined);
 
       const result = await scriptsHandler.handleCall("ninjaone_scripts_run", runArgs);
@@ -126,7 +126,7 @@ describe("Scripts Domain Handler", () => {
 
     it("cancels (not an error) when elicitation returns declined", async () => {
       currentCreds = baseCreds({ allowedScriptIds: new Set(["SCRIPT:1234"]) });
-      mockElicitConfirmation.mockResolvedValue(false);
+      mockElicitConfirmation.mockResolvedValue({ status: "declined" });
 
       const result = await scriptsHandler.handleCall("ninjaone_scripts_run", runArgs);
 
@@ -139,7 +139,7 @@ describe("Scripts Domain Handler", () => {
         allowedScriptIds: new Set(["SCRIPT:1234"]),
         allowSelfAttestedConfirmation: false,
       });
-      mockElicitConfirmation.mockResolvedValue(null);
+      mockElicitConfirmation.mockResolvedValue({ status: "unsupported" });
 
       const result = await scriptsHandler.handleCall("ninjaone_scripts_run", {
         ...runArgs,
@@ -156,7 +156,7 @@ describe("Scripts Domain Handler", () => {
         allowedScriptIds: new Set(["SCRIPT:1234"]),
         allowSelfAttestedConfirmation: true,
       });
-      mockElicitConfirmation.mockResolvedValue(null);
+      mockElicitConfirmation.mockResolvedValue({ status: "unsupported" });
       mockScriptsRun.mockResolvedValue(undefined);
 
       const result = await scriptsHandler.handleCall("ninjaone_scripts_run", {
@@ -168,12 +168,49 @@ describe("Scripts Domain Handler", () => {
       expect(mockScriptsRun).toHaveBeenCalledTimes(1);
     });
 
+    it("does not let a human decline fall through to self-attested confirmation", async () => {
+      currentCreds = baseCreds({
+        allowedScriptIds: new Set(["SCRIPT:1234"]),
+        allowSelfAttestedConfirmation: true,
+      });
+      mockElicitConfirmation.mockResolvedValue({ status: "declined" });
+
+      const result = await scriptsHandler.handleCall("ninjaone_scripts_run", {
+        ...runArgs,
+        confirm: true,
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.content[0]?.text).toContain("not confirmed");
+      expect(mockScriptsRun).not.toHaveBeenCalled();
+    });
+
+    it("does not let an elicitation error fall through to self-attested confirmation", async () => {
+      currentCreds = baseCreds({
+        allowedScriptIds: new Set(["SCRIPT:1234"]),
+        allowSelfAttestedConfirmation: true,
+      });
+      mockElicitConfirmation.mockResolvedValue({
+        status: "error",
+        message: "request timed out",
+      });
+
+      const result = await scriptsHandler.handleCall("ninjaone_scripts_run", {
+        ...runArgs,
+        confirm: true,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("request timed out");
+      expect(mockScriptsRun).not.toHaveBeenCalled();
+    });
+
     it("does not accept the self-attested fallback without confirm:true, even with the flag enabled", async () => {
       currentCreds = baseCreds({
         allowedScriptIds: new Set(["SCRIPT:1234"]),
         allowSelfAttestedConfirmation: true,
       });
-      mockElicitConfirmation.mockResolvedValue(null);
+      mockElicitConfirmation.mockResolvedValue({ status: "unsupported" });
 
       await scriptsHandler.handleCall("ninjaone_scripts_run", runArgs);
 

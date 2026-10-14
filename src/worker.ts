@@ -10,21 +10,23 @@
  * implementation to maintain.
  *
  * Credentials are resolved per request, in order:
- * 1. Gateway headers (when AUTH_MODE=gateway):
+ * 1. Gateway headers (when AUTH_MODE=gateway) — identity only:
  *    - X-Ninja-Client-ID
  *    - X-Ninja-Client-Secret
  *    - X-Ninja-Region (optional; us, eu, oc, ca, us2, fed)
- *    - X-Ninja-Allowed-Script-Ids (optional; unset means scripts_run refuses
- *      everything for this org -- see utils/types.ts parseAllowedScriptIds)
- *    - X-Ninja-Allow-Self-Attested-Confirmation (optional; unset/false
+ *    - X-Ninja-Scopes (optional)
+ * 2. Worker secrets / vars, in both modes, for script policy. This Worker
+ *    is a public endpoint, so X-Ninja-Allowed-Script-Ids and
+ *    X-Ninja-Allow-Self-Attested-Confirmation on the request are ignored
+ *    (and not advertised via CORS). Per-org policy headers are honored
+ *    only on the Node HTTP entry, which is the gateway's target.
+ *    - NINJAONE_CLIENT_ID / NINJAONE_CLIENT_SECRET / NINJAONE_REGION
+ *      (env mode only; gateway mode takes identity from headers)
+ *    - NINJAONE_ALLOWED_SCRIPT_IDS (optional; unset means scripts_run
+ *      refuses everything — see utils/types.ts parseAllowedScriptIds)
+ *    - NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION (optional; unset/false
  *      means scripts_run refuses outright on a client with no elicitation
  *      support, rather than silently falling back to confirm:true)
- * 2. Worker secrets / vars (env mode):
- *    - NINJAONE_CLIENT_ID
- *    - NINJAONE_CLIENT_SECRET
- *    - NINJAONE_REGION (optional)
- *    - NINJAONE_ALLOWED_SCRIPT_IDS (optional)
- *    - NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION (optional)
  *
  * `tools/list` and `initialize` work without credentials; only `tools/call`
  * requires them.
@@ -50,7 +52,7 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
-    "Content-Type, Accept, Authorization, Mcp-Session-Id, MCP-Protocol-Version, X-Ninja-Client-ID, X-Ninja-Client-Secret, X-Ninja-Region, X-Ninja-Allowed-Script-Ids, X-Ninja-Allow-Self-Attested-Confirmation",
+    "Content-Type, Accept, Authorization, Mcp-Session-Id, MCP-Protocol-Version, X-Ninja-Client-ID, X-Ninja-Client-Secret, X-Ninja-Region",
   "Access-Control-Expose-Headers": "Mcp-Session-Id",
 };
 
@@ -90,8 +92,18 @@ function getMcpHandler(env: Env): McpHttpHandler {
           : buildCredentials(
               env.NINJAONE_CLIENT_ID,
               env.NINJAONE_CLIENT_SECRET,
-              env.NINJAONE_REGION
+              env.NINJAONE_REGION,
+              undefined,
+              env.NINJAONE_ALLOWED_SCRIPT_IDS,
+              env.NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION
             ).creds,
+        // Public boundary: script policy comes from Worker bindings, never
+        // from request headers a browser or other caller can set.
+        trustScriptPolicyHeaders: false,
+        scriptPolicy: {
+          allowedScriptIds: env.NINJAONE_ALLOWED_SCRIPT_IDS,
+          allowSelfAttestedConfirmation: env.NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION,
+        },
       }),
       { legacy: "stateless" }
     );

@@ -137,7 +137,8 @@ export function buildCredentials(
   region: string | undefined,
   scopes?: string | undefined,
   allowedScriptIds?: string | undefined,
-  allowSelfAttestedConfirmation?: string | undefined
+  allowSelfAttestedConfirmation?: string | undefined,
+  options?: { gatewayMode?: boolean }
 ): { creds?: NinjaOneCredentials; error?: string } {
   if (!clientId || !clientSecret) {
     return {
@@ -148,6 +149,17 @@ export function buildCredentials(
 
   const regionVal = region?.toLowerCase() || "us";
   const validRegion = isValidRegion(regionVal) ? regionVal : "us";
+  // Gateway tenants must not inherit this process's script policy. A missing
+  // header (or a public Worker with no server-side binding) is deny-all /
+  // false for that tenant, not "use NINJAONE_ALLOWED_SCRIPT_IDS from the
+  // deployment environment". Env-mode callers still fall back to process.env.
+  const gatewayMode = options?.gatewayMode === true;
+  const scriptAllowlist = gatewayMode
+    ? allowedScriptIds
+    : allowedScriptIds ?? process.env.NINJAONE_ALLOWED_SCRIPT_IDS;
+  const selfAttested = gatewayMode
+    ? allowSelfAttestedConfirmation
+    : allowSelfAttestedConfirmation ?? process.env.NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION;
   return {
     creds: {
       clientId,
@@ -159,15 +171,32 @@ export function buildCredentials(
       // value anywhere in this chain -- parseAllowedScriptIds itself always
       // returns a Set (empty when unset/unparseable), and the scripts domain
       // handler treats an empty Set as deny-all. See its own module comment.
-      allowedScriptIds: parseAllowedScriptIds(
-        allowedScriptIds ?? process.env.NINJAONE_ALLOWED_SCRIPT_IDS
-      ),
+      allowedScriptIds: parseAllowedScriptIds(scriptAllowlist),
       // Same fail-closed shape: unset/unparseable is always false, never an
       // implicit "on". See types.ts parseBooleanFlag and domains/scripts.ts.
-      allowSelfAttestedConfirmation: parseBooleanFlag(
-        allowSelfAttestedConfirmation ?? process.env.NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION
-      ),
+      allowSelfAttestedConfirmation: parseBooleanFlag(selfAttested),
     },
+  };
+}
+
+export interface GatewayCredentialOptions {
+  /**
+   * Read script policy from `X-Ninja-Allowed-Script-Ids` and
+   * `X-Ninja-Allow-Self-Attested-Confirmation`. Only the Node HTTP entry
+   * sets this: those headers are Conduit's per-tenant policy channel, and
+   * that entry rejects requests that fail `X-Gateway-S2S` when
+   * `CONDUIT_S2S_SECRET` is set. Defaults to false so a public caller
+   * cannot widen the allowlist or turn on self-attested confirmation.
+   */
+  trustScriptPolicyHeaders?: boolean;
+  /**
+   * Server-side script policy used when request headers are not trusted
+   * (the public Worker). Unset means deny-all / false — gateway mode does
+   * not fall back to process.env.
+   */
+  scriptPolicy?: {
+    allowedScriptIds?: string;
+    allowSelfAttestedConfirmation?: string;
   };
 }
 
@@ -177,17 +206,32 @@ export function buildCredentials(
  * Works with any transport: pass a getter that returns a (lowercased) header
  * value. Returns `{ creds }` on success, or `{ error }` when required headers
  * are missing.
+ *
+ * Identity headers (client id, secret, region, scopes) come from the
+ * request. Script policy does not, unless `trustScriptPolicyHeaders` is
+ * set. Scopes stay header-driven: NinjaOne rejects a token request for a
+ * scope the app was never granted, so that header cannot escalate past
+ * the OAuth grant, and it does not control the script allowlist.
  */
 export function resolveGatewayCredentials(
-  getHeader: (lowerName: string) => string | undefined
+  getHeader: (lowerName: string) => string | undefined,
+  options: GatewayCredentialOptions = {}
 ): { creds?: NinjaOneCredentials; error?: string } {
+  const trustPolicy = options.trustScriptPolicyHeaders === true;
+  const allowedScriptIds = trustPolicy
+    ? getHeader("x-ninja-allowed-script-ids")
+    : options.scriptPolicy?.allowedScriptIds;
+  const allowSelfAttestedConfirmation = trustPolicy
+    ? getHeader("x-ninja-allow-self-attested-confirmation")
+    : options.scriptPolicy?.allowSelfAttestedConfirmation;
   return buildCredentials(
     getHeader("x-ninja-client-id"),
     getHeader("x-ninja-client-secret"),
     getHeader("x-ninja-region"),
     getHeader("x-ninja-scopes"),
-    getHeader("x-ninja-allowed-script-ids"),
-    getHeader("x-ninja-allow-self-attested-confirmation")
+    allowedScriptIds,
+    allowSelfAttestedConfirmation,
+    { gatewayMode: true }
   );
 }
 
@@ -206,11 +250,17 @@ export function resolveGatewayCredentials(
 export function makeMcpServerFactory(options: {
   gatewayMode: boolean;
   envCredentials?: NinjaOneCredentials;
+  trustScriptPolicyHeaders?: boolean;
+  scriptPolicy?: GatewayCredentialOptions["scriptPolicy"];
 }): McpServerFactory {
   return (ctx) => {
     if (options.gatewayMode) {
       const { creds } = resolveGatewayCredentials(
-        (name) => ctx.requestInfo?.headers.get(name) ?? undefined
+        (name) => ctx.requestInfo?.headers.get(name) ?? undefined,
+        {
+          trustScriptPolicyHeaders: options.trustScriptPolicyHeaders,
+          scriptPolicy: options.scriptPolicy,
+        }
       );
       return createMcpServer(creds);
     }
@@ -349,11 +399,13 @@ export async function createMcpServer(
             "Elicitation smoke test for ninjaone_scripts_run -- click confirm (or decline) to report what this client returns."
           );
           const verdict =
-            result === null
-              ? "FAIL (unsupported): this client did not respond to the elicitation request at all -- server.elicitInput() returned null, meaning the client never implements the capability. ninjaone_scripts_run will refuse every call for this client unless allowSelfAttestedConfirmation is explicitly enabled for this org."
-              : result === true
-                ? "PASS (confirmed): this client supports elicitation and returned 'confirm'. ninjaone_scripts_run's human-confirmation step will work normally."
-                : "PASS (declined): this client supports elicitation and returned 'decline' -- the capability works; you just didn't confirm this particular prompt. Run again and click confirm to see the PASS/confirmed result.";
+            result.status === "unsupported"
+              ? "FAIL (unsupported): this client cannot answer an elicitation request (it does not advertise the capability, or this protocol era has no push-style elicitation). ninjaone_scripts_run will refuse every call for this client unless allowSelfAttestedConfirmation is explicitly enabled for this org."
+              : result.status === "error"
+                ? `FAIL (error): elicitation failed (${result.message}). This is not an unsupported client — a decline, cancellation, or error does not fall back to self-attested confirmation.`
+                : result.status === "accepted" && result.confirm
+                  ? "PASS (confirmed): this client supports elicitation and returned 'confirm'. ninjaone_scripts_run's human-confirmation step will work normally."
+                  : "PASS (declined): this client supports elicitation and the prompt was declined, cancelled, or left unchecked. The capability works; run again and click confirm to see the PASS/confirmed result.";
 
           return {
             content: [{ type: "text", text: `Elicitation check result: ${verdict}\n\nRaw return value: ${JSON.stringify(result)}` }],

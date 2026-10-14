@@ -50,6 +50,10 @@ describe("Cloudflare Worker entrypoint", () => {
     );
     expect(res.status).toBe(204);
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    const allowHeaders = res.headers.get("Access-Control-Allow-Headers") ?? "";
+    expect(allowHeaders).not.toMatch(/x-ninja-allowed-script-ids/i);
+    expect(allowHeaders).not.toMatch(/x-ninja-allow-self-attested-confirmation/i);
+    expect(allowHeaders).not.toMatch(/x-ninja-scopes/i);
   });
 
   it("404s unknown paths", async () => {
@@ -110,5 +114,106 @@ describe("Cloudflare Worker entrypoint", () => {
       { AUTH_MODE: "gateway" }
     );
     expect(res.status).toBe(401);
+  });
+
+  it("does not let a public caller set the script allowlist in gateway mode", async () => {
+    const previous = process.env.NINJAONE_ALLOWED_SCRIPT_IDS;
+    process.env.NINJAONE_ALLOWED_SCRIPT_IDS = "SCRIPT:1234";
+    try {
+      const res = await worker.fetch(
+        new Request("http://worker.local/mcp", {
+          method: "POST",
+          headers: {
+            ...MCP_HEADERS,
+            "X-Ninja-Client-ID": "tenant-id",
+            "X-Ninja-Client-Secret": "tenant-secret",
+            "X-Ninja-Allowed-Script-Ids": "SCRIPT:1234",
+            "X-Ninja-Allow-Self-Attested-Confirmation": "true",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 5,
+            method: "tools/call",
+            params: {
+              name: "ninjaone_scripts_run",
+              arguments: { device_id: 101, type: "SCRIPT", id: 1234, confirm: true },
+            },
+          }),
+        }),
+        { AUTH_MODE: "gateway" }
+      );
+      expect(res.status).toBe(200);
+      const body = (await mcpJson(res)) as { result?: { content?: { text?: string }[] } };
+      expect(body.result?.content?.[0]?.text).toContain("not on this org's approved-scripts list");
+    } finally {
+      if (previous === undefined) delete process.env.NINJAONE_ALLOWED_SCRIPT_IDS;
+      else process.env.NINJAONE_ALLOWED_SCRIPT_IDS = previous;
+    }
+  });
+
+  it("applies the Worker script allowlist binding in gateway mode", async () => {
+    const res = await worker.fetch(
+      new Request("http://worker.local/mcp", {
+        method: "POST",
+        headers: {
+          ...MCP_HEADERS,
+          "X-Ninja-Client-ID": "tenant-id",
+          "X-Ninja-Client-Secret": "tenant-secret",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 7,
+          method: "tools/call",
+          params: {
+            name: "ninjaone_scripts_run",
+            arguments: { device_id: 101, type: "SCRIPT", id: 1234, confirm: true },
+          },
+        }),
+      }),
+      {
+        AUTH_MODE: "gateway",
+        NINJAONE_ALLOWED_SCRIPT_IDS: "SCRIPT:1234",
+      }
+    );
+    expect(res.status).toBe(200);
+    const body = (await mcpJson(res)) as { result?: { content?: { text?: string }[] } };
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).not.toContain("not on this org's approved-scripts list");
+    expect(text).toMatch(/confirmation/i);
+  });
+
+  it("applies the Worker script allowlist binding in env mode", async () => {
+    const previous = process.env.NINJAONE_ALLOWED_SCRIPT_IDS;
+    delete process.env.NINJAONE_ALLOWED_SCRIPT_IDS;
+    try {
+      const res = await worker.fetch(
+        new Request("http://worker.local/mcp", {
+          method: "POST",
+          headers: MCP_HEADERS,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 6,
+            method: "tools/call",
+            params: {
+              name: "ninjaone_scripts_run",
+              arguments: { device_id: 101, type: "SCRIPT", id: 1234, confirm: true },
+            },
+          }),
+        }),
+        {
+          NINJAONE_CLIENT_ID: "id",
+          NINJAONE_CLIENT_SECRET: "secret",
+          NINJAONE_ALLOWED_SCRIPT_IDS: "SCRIPT:1234",
+        }
+      );
+      expect(res.status).toBe(200);
+      const body = (await mcpJson(res)) as { result?: { content?: { text?: string }[] } };
+      const text = body.result?.content?.[0]?.text ?? "";
+      expect(text).not.toContain("not on this org's approved-scripts list");
+      expect(text).toMatch(/confirmation/i);
+    } finally {
+      if (previous === undefined) delete process.env.NINJAONE_ALLOWED_SCRIPT_IDS;
+      else process.env.NINJAONE_ALLOWED_SCRIPT_IDS = previous;
+    }
   });
 });
