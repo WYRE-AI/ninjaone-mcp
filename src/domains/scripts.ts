@@ -114,6 +114,16 @@ function scriptKey(type: ScriptEntryType, idOrUid: number | string): string {
 }
 
 /**
+ * NinjaOne device ids are positive integers. The tool dispatcher does not
+ * enforce the input schema, so a missing or non-integer device_id must be
+ * refused here before pairing, caller auth, the audit line, or scripts.run.
+ */
+function positiveDeviceId(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) return null;
+  return value;
+}
+
+/**
  * One-line rendering of a caller-controlled confirmation field.
  *
  * Newlines and other control characters are escaped so a parameter or
@@ -244,13 +254,20 @@ async function handleCall(
     }
 
     case "ninjaone_scripts_run": {
-      const deviceId = args.device_id as number;
+      const deviceId = positiveDeviceId(args.device_id);
       const type = args.type as ScriptEntryType;
       const id = args.id as number | undefined;
       const uid = args.uid as string | undefined;
       const parameters = args.parameters as string | undefined;
       const runAs = args.run_as as string | undefined;
       const confirmArg = args.confirm as boolean | undefined;
+
+      if (deviceId === null) {
+        return {
+          content: [{ type: "text", text: "Error: device_id must be a positive integer." }],
+          isError: true,
+        };
+      }
 
       const pairingError = validatePairing(type, id, uid);
       if (pairingError) {

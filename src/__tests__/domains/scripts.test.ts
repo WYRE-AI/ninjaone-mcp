@@ -98,6 +98,37 @@ describe("Scripts Domain Handler", () => {
   describe("ninjaone_scripts_run", () => {
     const runArgs = { device_id: 101, type: "SCRIPT", id: 1234 };
 
+    it.each([
+      ["missing", { type: "SCRIPT" }],
+      ["null", { device_id: null, type: "SCRIPT", id: 1234 }],
+      ["a numeric string", { device_id: "101", type: "SCRIPT", id: 1234 }],
+      ["a fraction", { device_id: 1.5, type: "SCRIPT", id: 1234 }],
+      ["zero", { device_id: 0, type: "SCRIPT", id: 1234 }],
+      ["negative", { device_id: -3, type: "SCRIPT", id: 1234 }],
+    ])(
+      "rejects a %s device_id before pairing, auth, audit, or the vendor call",
+      async (_label, args) => {
+        currentCreds = baseCreds({ allowedScriptIds: new Set(["SCRIPT:1234"]) });
+        mockElicitConfirmation.mockResolvedValue({ status: "accepted", confirm: true });
+        const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        const result = await callRun(
+          { ...args, confirm: true },
+          { effect: "deny", reason: "unauthenticated" }
+        );
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain("device_id must be a positive integer");
+        expect(result.content[0]?.text).not.toContain("not on this org's approved-scripts list");
+        expect(result.content[0]?.text).not.toContain("no authenticated caller");
+        expect(result.content[0]?.text).not.toContain("type is SCRIPT");
+        expect(mockElicitConfirmation).not.toHaveBeenCalled();
+        expect(mockScriptsRun).not.toHaveBeenCalled();
+        expect(errorSpy.mock.calls.join("\n")).not.toContain("AUDIT scripts_run");
+        errorSpy.mockRestore();
+      }
+    );
+
     it("refuses when allowedScriptIds is unset (deny-all, not allow-all)", async () => {
       currentCreds = baseCreds({ allowedScriptIds: new Set() });
 
