@@ -33,6 +33,7 @@
 import type { Tool } from "@modelcontextprotocol/server";
 import type { CallToolResult, DomainHandler } from "../utils/types.js";
 import type { ScriptEntryType } from "@wyre-ai/node-ninjaone";
+import { NinjaOneError } from "@wyre-ai/node-ninjaone";
 import { getClient, getCredentials, createClientDirect } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
 import { elicitConfirmation } from "../utils/elicitation.js";
@@ -213,6 +214,8 @@ function auditScriptRun(entry: {
    */
   confirmationPath: "elicitation" | "self-attested" | "none";
   detail?: unknown;
+  /** Upstream HTTP status, when the failure came from a NinjaOneError. */
+  statusCode?: number;
 }): void {
   logger.info("AUDIT scripts_run", {
     deviceId: entry.deviceId,
@@ -221,6 +224,7 @@ function auditScriptRun(entry: {
     outcome: entry.outcome,
     confirmationPath: entry.confirmationPath,
     detail: entry.detail,
+    statusCode: entry.statusCode,
     // Conduit's gateway-level audit log already records actor/org/tool-name/
     // timestamp/statusCode for every call through the proxy; this line adds
     // what that one doesn't carry for every vendor call -- which script and
@@ -414,6 +418,10 @@ async function handleCall(
           outcome: "failed",
           confirmationPath,
           detail: error instanceof Error ? error.message : String(error),
+          // NinjaOneError carries the upstream HTTP statusCode; worth this
+          // log's own copy since the gateway audit log's statusCode covers
+          // the proxy call, not the vendor call this handler makes directly.
+          statusCode: error instanceof NinjaOneError ? error.statusCode : undefined,
         });
         throw error;
       }

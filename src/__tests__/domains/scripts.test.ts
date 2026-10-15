@@ -48,6 +48,7 @@ import {
   runWithScriptCaller,
   type ScriptCallerAuth,
 } from "../../utils/script-caller.js";
+import { NinjaOneServerError } from "@wyre-ai/node-ninjaone";
 
 function callRun(
   args: Record<string, unknown>,
@@ -176,6 +177,42 @@ describe("Scripts Domain Handler", () => {
         runAs: "LOCAL_ADMIN",
       });
       expect(result.isError).toBeUndefined();
+    });
+
+    it("records the upstream statusCode in the audit log when the vendor call fails with a NinjaOneError, and rethrows", async () => {
+      currentCreds = baseCreds({ allowedScriptIds: new Set(["SCRIPT:1234"]) });
+      mockElicitConfirmation.mockResolvedValue({ status: "accepted", confirm: true });
+      const vendorError = new NinjaOneServerError("upstream exploded", 503);
+      mockScriptsRun.mockRejectedValue(vendorError);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      await expect(scriptsHandler.handleCall("ninjaone_scripts_run", runArgs)).rejects.toBe(
+        vendorError
+      );
+
+      const auditLine = errorSpy.mock.calls
+        .map((call) => call.join(" "))
+        .find((line) => line.includes("AUDIT scripts_run"));
+      expect(auditLine).toContain('"outcome":"failed"');
+      expect(auditLine).toContain('"statusCode":503');
+      errorSpy.mockRestore();
+    });
+
+    it("omits statusCode when the vendor call fails with a non-NinjaOneError", async () => {
+      currentCreds = baseCreds({ allowedScriptIds: new Set(["SCRIPT:1234"]) });
+      mockElicitConfirmation.mockResolvedValue({ status: "accepted", confirm: true });
+      mockScriptsRun.mockRejectedValue(new Error("network blip"));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      await expect(
+        scriptsHandler.handleCall("ninjaone_scripts_run", runArgs)
+      ).rejects.toThrow("network blip");
+
+      const auditLine = errorSpy.mock.calls
+        .map((call) => call.join(" "))
+        .find((line) => line.includes("AUDIT scripts_run"));
+      expect(auditLine).not.toContain("statusCode");
+      errorSpy.mockRestore();
     });
 
     it("shows omitted parameters and run_as as none", async () => {
