@@ -236,7 +236,10 @@ export function formatToolError(error: unknown): string {
   const body =
     typeof raw === "string" ? raw : raw != null ? safeStringify(raw) : undefined;
 
-  const parts = [`Error: ${message}`];
+  const statusCode = (error as { statusCode?: unknown } | null)?.statusCode;
+  const statusSuffix = typeof statusCode === "number" ? ` (HTTP ${statusCode})` : "";
+
+  const parts = [`Error: ${message}${statusSuffix}`];
   if (body && !message.includes(body)) {
     parts.push(body);
   }
