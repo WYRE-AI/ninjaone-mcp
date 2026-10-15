@@ -67,6 +67,24 @@ describe("formatToolError", () => {
     expect(formatToolError("kaboom")).toBe("Error: kaboom");
   });
 
+  it("includes the numeric statusCode alongside the message", () => {
+    const error = new FakeNinjaOneError("Device not found", 404, '{"error":"not_found"}');
+
+    expect(formatToolError(error)).toContain("(HTTP 404)");
+  });
+
+  it("omits the statusCode when the error carries none", () => {
+    expect(formatToolError(new Error("boom"))).not.toContain("HTTP");
+  });
+
+  it("omits the statusCode when it is present but not numeric", () => {
+    class WeirdError extends Error {
+      statusCode = "not-a-number";
+    }
+
+    expect(formatToolError(new WeirdError("odd"))).not.toContain("HTTP");
+  });
+
   it("does not duplicate a body already contained in the message", () => {
     const error = new FakeNinjaOneError(
       'Request failed: {"error":"invalid_scope"}',

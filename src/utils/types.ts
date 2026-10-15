@@ -40,13 +40,14 @@ export type DomainName =
   | "devices"
   | "organizations"
   | "alerts"
-  | "tickets";
+  | "tickets"
+  | "scripts";
 
 /**
  * Check if a string is a valid domain name
  */
 export function isDomainName(value: string): value is DomainName {
-  return ["devices", "organizations", "alerts", "tickets"].includes(value);
+  return ["devices", "organizations", "alerts", "tickets", "scripts"].includes(value);
 }
 
 /**
@@ -113,6 +114,68 @@ export function parseScopes(raw: string | undefined): NinjaOneScope[] | undefine
   }
 
   return [...new Set(valid)];
+}
+
+/**
+ * Parse a configured per-org script allowlist (`NINJAONE_ALLOWED_SCRIPT_IDS`,
+ * or the gateway's `X-Ninja-Allowed-Script-Ids` header) into the Set of
+ * composite keys ninjaone_scripts_run checks against -- see domains/scripts.ts
+ * scriptKey() for the "TYPE:identifier" format each entry must match.
+ *
+ * Deliberately fail-closed, unlike parseScopes: unset, blank, or entirely
+ * unparseable ALWAYS returns an empty Set, never `undefined`-as-"no
+ * restriction". scripts_run treats an empty Set as deny-all. There is no
+ * default-allow reading of this value anywhere in this server.
+ *
+ * Expected format: comma-separated composite keys, e.g.
+ * "SCRIPT:1234,ACTION:9f2b6e2e-....". A bare number/uuid without its
+ * "SCRIPT:"/"ACTION:" prefix is dropped (with a warning) rather than guessed
+ * at, since id and uid are different identifier spaces.
+ */
+export function parseAllowedScriptIds(raw: string | undefined): Set<string> {
+  const trimmed = raw?.trim();
+  if (!trimmed || CONFIG_PLACEHOLDER.test(trimmed)) {
+    return new Set();
+  }
+
+  const entries = trimmed
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  for (const entry of entries) {
+    const [type, ...rest] = entry.split(":");
+    const identifier = rest.join(":");
+    if ((type === "SCRIPT" || type === "ACTION") && identifier.length > 0) {
+      valid.push(`${type}:${identifier}`);
+    } else {
+      invalid.push(entry);
+    }
+  }
+
+  if (invalid.length > 0) {
+    logger.warn("Ignoring malformed NinjaOne allowed-script-id entries", {
+      ignored: invalid,
+      expectedFormat: "SCRIPT:<id> or ACTION:<uid>",
+    });
+  }
+
+  return new Set(valid);
+}
+
+/**
+ * Parse an ops-only boolean flag (`NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION`,
+ * or the gateway's `X-Ninja-Allow-Self-Attested-Confirmation` header).
+ * Fail-closed like parseAllowedScriptIds: anything other than the literal
+ * string "true" (case-insensitive) is false, including unset/blank/typo'd --
+ * there is no implicit "on" reading.
+ */
+export function parseBooleanFlag(raw: string | undefined): boolean {
+  const trimmed = raw?.trim().toLowerCase();
+  if (!trimmed || CONFIG_PLACEHOLDER.test(trimmed)) return false;
+  return trimmed === "true";
 }
 
 /**

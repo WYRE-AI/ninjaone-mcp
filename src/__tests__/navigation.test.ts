@@ -97,6 +97,7 @@ describe("Domain Navigation", () => {
         "organizations",
         "alerts",
         "tickets",
+        "scripts",
       ]);
     });
 

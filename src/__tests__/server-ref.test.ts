@@ -141,10 +141,10 @@ describe("server-ref cross-tenant isolation", () => {
       // Tenant B's handler runs to completion while tenant A is suspended.
       const tenantA = serverA.invoke("tools/call");
       const tenantB = serverB.invoke("tools/call");
-      await expect(tenantB).resolves.toBe(true);
+      await expect(tenantB).resolves.toEqual({ status: "accepted", confirm: true });
 
       gate.resolve();
-      await expect(tenantA).resolves.toBe(true);
+      await expect(tenantA).resolves.toEqual({ status: "accepted", confirm: true });
 
       // --- Per-tenant VALUE assertions -----------------------------------
       // Each tenant's prompt must have gone out through THAT tenant's mock

@@ -20,6 +20,8 @@ import {
   isValidRegion,
   getBaseUrlForRegion,
   parseScopes,
+  parseAllowedScriptIds,
+  parseBooleanFlag,
   CONFIG_PLACEHOLDER,
   type NinjaOneRegion,
   type NinjaOneScope,
@@ -37,6 +39,18 @@ export interface NinjaOneCredentials {
    * app is granted a narrower set, or the token request 400s.
    */
   scopes?: NinjaOneScope[];
+  /**
+   * Org-level pre-approved script allowlist for ninjaone_scripts_run, as
+   * composite "TYPE:identifier" keys. Always a Set (never undefined) --
+   * empty means deny-all. See types.ts parseAllowedScriptIds.
+   */
+  allowedScriptIds: Set<string>;
+  /**
+   * Ops-only opt-in: permits ninjaone_scripts_run's confirm:true fallback
+   * path when the connected client has no elicitation support. False by
+   * default -- see types.ts parseBooleanFlag and domains/scripts.ts.
+   */
+  allowSelfAttestedConfirmation: boolean;
 }
 
 let _client: NinjaOneClient | null = null;
@@ -108,8 +122,20 @@ export function getCredentials(): NinjaOneCredentials | null {
   const region = isValidRegion(regionEnv) ? regionEnv : "us";
   const baseUrl = getBaseUrlForRegion(region);
   const scopes = parseScopes(process.env.NINJAONE_SCOPES);
+  const allowedScriptIds = parseAllowedScriptIds(process.env.NINJAONE_ALLOWED_SCRIPT_IDS);
+  const allowSelfAttestedConfirmation = parseBooleanFlag(
+    process.env.NINJAONE_ALLOW_SELF_ATTESTED_CONFIRMATION
+  );
 
-  return { clientId, clientSecret, region, baseUrl, scopes };
+  return {
+    clientId,
+    clientSecret,
+    region,
+    baseUrl,
+    scopes,
+    allowedScriptIds,
+    allowSelfAttestedConfirmation,
+  };
 }
 
 /**
@@ -210,7 +236,10 @@ export function formatToolError(error: unknown): string {
   const body =
     typeof raw === "string" ? raw : raw != null ? safeStringify(raw) : undefined;
 
-  const parts = [`Error: ${message}`];
+  const statusCode = (error as { statusCode?: unknown } | null)?.statusCode;
+  const statusSuffix = typeof statusCode === "number" ? ` (HTTP ${statusCode})` : "";
+
+  const parts = [`Error: ${message}${statusSuffix}`];
   if (body && !message.includes(body)) {
     parts.push(body);
   }

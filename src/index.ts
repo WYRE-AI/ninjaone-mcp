@@ -44,6 +44,7 @@ import {
   createMcpServer,
   makeMcpServerFactory,
   resolveGatewayCredentials,
+  scriptPolicyHeadersTrusted,
 } from "./mcp-server.js";
 import { preflightAuthCheck } from "./utils/client.js";
 import { logger } from "./utils/logger.js";
@@ -185,7 +186,21 @@ export async function startHttpTransport(): Promise<HttpServer> {
   // traffic natively. Never use legacy: 'reject' here — it would turn away
   // every pre-envelope client.
   const mcpHandler = createMcpHandler(
-    makeMcpServerFactory({ gatewayMode: isGatewayMode }),
+    makeMcpServerFactory({
+      gatewayMode: isGatewayMode,
+      // Script-policy headers are the gateway's per-tenant allowlist only
+      // when this process is enforcing X-Gateway-S2S. The insecure-dev
+      // bypass leaves the secret empty, so those headers stay untrusted
+      // and scripts_run is deny-all.
+      trustScriptPolicyHeaders: scriptPolicyHeadersTrusted(isGatewayMode, s2sSecret),
+      // Remote script execution needs an authenticated caller. A non-empty
+      // s2sSecret is that caller for server-held env credentials (startup
+      // refuses an empty secret except for the loopback insecure-dev bypass).
+      // The opt-in flag is a second gate and defaults off. Neither is implied
+      // by an elicitation answer.
+      s2sEnforced: s2sSecret !== "",
+      allowServerHeldScriptExecution: process.env.NINJAONE_ALLOW_SERVER_HELD_SCRIPT_EXECUTION,
+    }),
     {
       legacy: "stateless",
       onerror: (error) => logger.error("MCP serving error", { error: error.message }),
