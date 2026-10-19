@@ -113,15 +113,20 @@ function normalizeStatus(value: unknown): string {
  * support server-side filtering by status, client, or device — sending those
  * filters throws a generic 400 (issues #60, #61) — so matching happens here.
  *
- * Board rows carry `status` as an object ({ statusId, displayName }), the client
- * as `clientId`, and the device as `nodeId`; the single-ticket endpoint uses a
- * plain status string and `organizationId`/`deviceId`, so all shapes are checked.
+ * Board rows carry `status` as an object ({ statusId, displayName }) and often
+ * omit `clientId`/`nodeId`, carrying the organization only as its display name
+ * in `organization` (null when the ticket has no org) — see #111. The
+ * single-ticket endpoint uses a plain status string and `organizationId`/
+ * `deviceId`. When filtering by organization_id the caller resolves the org
+ * name once and passes it as `organizationName` so board rows without ids still
+ * match.
  */
 function ticketMatchesFilters(
   ticket: Record<string, unknown>,
   status: string | undefined,
   organizationId: number | undefined,
-  deviceId: number | undefined
+  deviceId: number | undefined,
+  organizationName?: string
 ): boolean {
   if (status !== undefined) {
     const s = ticket.status as { displayName?: string; name?: string } | string | undefined;
@@ -130,7 +135,20 @@ function ticketMatchesFilters(
   }
   if (organizationId !== undefined) {
     const org = ticket.clientId ?? ticket.organizationId;
-    if (org !== organizationId) return false;
+    if (typeof org === "number") {
+      if (org !== organizationId) return false;
+    } else {
+      // Board rows from POST .../board/{id}/run typically have no clientId —
+      // only `organization` (a name string, or null). Match that name; null
+      // never matches. Two orgs sharing a name would both match (API limitation).
+      if (
+        organizationName === undefined ||
+        typeof ticket.organization !== "string" ||
+        ticket.organization !== organizationName
+      ) {
+        return false;
+      }
+    }
   }
   if (deviceId !== undefined) {
     const node = ticket.nodeId ?? ticket.deviceId;
@@ -199,7 +217,7 @@ function getTools(): Tool[] {
           },
           organization_id: {
             type: "number",
-            description: "Filter by organization (ticket clientId), matched client-side.",
+            description: "Filter by organization id, matched client-side against board-row clientId/organizationId or the organization name (board rows often omit the id).",
           },
           device_id: {
             type: "number",
@@ -600,9 +618,32 @@ async function handleCall(
         organizationId !== undefined ||
         deviceId !== undefined;
 
+      // Board rows often omit clientId and only carry the org as a name string
+      // (#111). Resolve the name once per call so those rows can still match.
+      let organizationName: string | undefined;
+      if (organizationId !== undefined) {
+        try {
+          const org = (await client.organizations.get(organizationId)) as {
+            name?: unknown;
+          };
+          if (typeof org?.name !== "string" || org.name.length === 0) {
+            return errorResult(
+              `Organization ${organizationId} has no name; cannot filter board rows that omit clientId.`
+            );
+          }
+          organizationName = org.name;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return errorResult(
+            `Could not load organization ${organizationId} to filter tickets: ${message}`
+          );
+        }
+      }
+
       logger.info("API call: tickets.list", {
         status: statusFilter,
         organizationId,
+        organizationName,
         deviceId,
         boardId,
         limit,
@@ -632,7 +673,13 @@ async function handleCall(
 
       const rawTickets = extractTickets(response);
       const tickets = rawTickets.filter((t) =>
-        ticketMatchesFilters(t, statusFilter, organizationId, deviceId)
+        ticketMatchesFilters(
+          t,
+          statusFilter,
+          organizationId,
+          deviceId,
+          organizationName
+        )
       );
       // A page exactly the size of the limit means the board almost certainly has
       // more tickets, so surface it — otherwise a caller (or an LLM) mistakes one

@@ -15,6 +15,7 @@ const {
   mockTicketsListBoards,
   mockTicketsListForms,
   mockTicketsGetForm,
+  mockOrganizationsGet,
   mockHttpRequest,
   mockClient,
 } = vi.hoisted(() => {
@@ -27,6 +28,7 @@ const {
   const mockTicketsListBoards = vi.fn();
   const mockTicketsListForms = vi.fn();
   const mockTicketsGetForm = vi.fn();
+  const mockOrganizationsGet = vi.fn();
   const mockHttpRequest = vi.fn();
 
   const mockClient = {
@@ -40,6 +42,9 @@ const {
       listBoards: mockTicketsListBoards,
       listForms: mockTicketsListForms,
       getForm: mockTicketsGetForm,
+    },
+    organizations: {
+      get: mockOrganizationsGet,
     },
     // The SDK marks httpClient TypeScript-private, not #private, so the
     // documented endpoints it does not implement are reached through it.
@@ -56,6 +61,7 @@ const {
     mockTicketsListBoards,
     mockTicketsListForms,
     mockTicketsGetForm,
+    mockOrganizationsGet,
     mockHttpRequest,
     mockClient,
   };
@@ -90,9 +96,11 @@ describe("Tickets Domain Handler", () => {
     mockTicketsListBoards.mockClear();
     mockTicketsListForms.mockClear();
     mockTicketsGetForm.mockClear();
+    mockOrganizationsGet.mockClear();
     mockHttpRequest.mockClear();
 
     // Reset mock implementations - list returns TicketListResponse
+    mockOrganizationsGet.mockResolvedValue({ id: 5, name: "Acme Corp" });
     mockTicketsList.mockResolvedValue({
       tickets: [
         { id: 1, subject: "Ticket 1", status: "OPEN" },
@@ -375,6 +383,85 @@ describe("Tickets Domain Handler", () => {
 
         const data = JSON.parse(result.content[0].text);
         expect(data.tickets.map((t: { id: number }) => t.id)).toEqual([1]);
+        expect(mockOrganizationsGet).toHaveBeenCalledWith(5);
+      });
+
+      // #111: board-run rows often omit clientId and only carry `organization`
+      // as a display name (null when the ticket has no org).
+      it("should filter board rows by organization name when clientId is absent (#111)", async () => {
+        mockOrganizationsGet.mockResolvedValueOnce({ id: 42, name: "Acme Corp" });
+        mockTicketsList.mockResolvedValueOnce({
+          data: [
+            {
+              id: 1234,
+              summary: "Acme ticket",
+              status: { statusId: 2000, displayName: "Open" },
+              organization: "Acme Corp",
+              requester: "Ada",
+              type: "TASK",
+            },
+            {
+              id: 1235,
+              summary: "Other org",
+              status: { statusId: 2000, displayName: "Open" },
+              organization: "Other Co",
+              requester: "Bob",
+              type: "TASK",
+            },
+            {
+              id: 1236,
+              summary: "No org (email)",
+              status: { statusId: 2000, displayName: "Open" },
+              organization: null,
+              requester: "Eve",
+              type: "TASK",
+            },
+          ],
+        });
+
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_list", {
+          board_id: 1,
+          organization_id: 42,
+        });
+
+        expect(result.isError).toBeUndefined();
+        expect(mockOrganizationsGet).toHaveBeenCalledWith(42);
+        const data = JSON.parse(result.content[0].text);
+        expect(data.scanned).toBe(3);
+        expect(data.count).toBe(1);
+        expect(data.tickets.map((t: { id: number }) => t.id)).toEqual([1234]);
+      });
+
+      it("should not match a null organization name on board rows (#111)", async () => {
+        mockOrganizationsGet.mockResolvedValueOnce({ id: 7, name: "Solo" });
+        mockTicketsList.mockResolvedValueOnce({
+          data: [
+            { id: 1, organization: null, status: { displayName: "Open" } },
+            { id: 2, organization: "Solo", status: { displayName: "Open" } },
+          ],
+        });
+
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_list", {
+          board_id: 1,
+          organization_id: 7,
+        });
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.tickets.map((t: { id: number }) => t.id)).toEqual([2]);
+      });
+
+      it("should return an error when the organization lookup fails (#111)", async () => {
+        mockOrganizationsGet.mockRejectedValueOnce(new Error("404 not found"));
+
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_list", {
+          board_id: 1,
+          organization_id: 99,
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("99");
+        expect(result.content[0].text).toContain("404 not found");
+        expect(mockTicketsList).not.toHaveBeenCalled();
       });
 
       it("should flag hasMore and a cursor when the board page is full", async () => {
