@@ -68,16 +68,20 @@ const {
 });
 
 // Mock the client module before importing the handler
-vi.mock("../../utils/client.js", () => ({
-  getClient: () => Promise.resolve(mockClient),
-  clearClient: vi.fn(),
-  getCredentials: () => ({
-    clientId: "test",
-    clientSecret: "test",
-    region: "us",
-    baseUrl: "https://app.ninjarmm.com",
-  }),
-}));
+vi.mock("../../utils/client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../utils/client.js")>();
+  return {
+    ...actual,
+    getClient: () => Promise.resolve(mockClient),
+    clearClient: vi.fn(),
+    getCredentials: () => ({
+      clientId: "test",
+      clientSecret: "test",
+      region: "us",
+      baseUrl: "https://app.ninjarmm.com",
+    }),
+  };
+});
 
 // Import handler after mocking
 import { ticketsHandler } from "../../domains/tickets.js";
@@ -460,7 +464,7 @@ describe("Tickets Domain Handler", () => {
 
         expect(result.isError).toBe(true);
         expect(result.content[0].text).toContain("99");
-        expect(result.content[0].text).toContain("404 not found");
+        expect(result.content[0].text).toContain("Error: 404 not found");
         expect(mockTicketsList).not.toHaveBeenCalled();
       });
 

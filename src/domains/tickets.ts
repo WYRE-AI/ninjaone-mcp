@@ -14,7 +14,7 @@ import type {
   TicketCreateData,
   TicketUpdateData,
 } from "@wyre-ai/node-ninjaone";
-import { getClient } from "../utils/client.js";
+import { formatToolError, getClient } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
 import { TICKETING_PATHS, ticketingGet } from "../utils/ticketing-api.js";
 
@@ -633,9 +633,8 @@ async function handleCall(
           }
           organizationName = org.name;
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
           return errorResult(
-            `Could not load organization ${organizationId} to filter tickets: ${message}`
+            `Could not load organization ${organizationId} to filter tickets: ${formatToolError(err)}`
           );
         }
       }
