@@ -89,12 +89,12 @@ const PRODUCT_IDENTIFIER: FilterSchema = {
 const INSTALLED_AFTER: FilterSchema = {
   type: "string",
   description:
-    "ISO-8601 date or date-time (e.g. 2026-09-22). Only installs after this time. A date alone means midnight UTC. Sent to NinjaOne as Unix epoch seconds.",
+    "ISO-8601 date (2026-09-22, meaning midnight UTC) or date-time with Z or an offset (2026-09-22T08:00:00Z). Only installs after this time. Sent to NinjaOne as Unix epoch seconds.",
 };
 const INSTALLED_BEFORE: FilterSchema = {
   type: "string",
   description:
-    "ISO-8601 date or date-time (e.g. 2026-10-22). Only installs before this time. A date alone means midnight UTC. Sent to NinjaOne as Unix epoch seconds.",
+    "ISO-8601 date (2026-10-22, meaning midnight UTC) or date-time with Z or an offset (2026-10-22T08:00:00Z). Only installs before this time. Sent to NinjaOne as Unix epoch seconds.",
 };
 
 interface PatchReport {
@@ -159,8 +159,9 @@ function toolDescription(report: PatchReport): string {
   return (
     `Read-only. ${report.summary} ` +
     `Without device_id: fleet-wide report (GET /v2/queries/${report.endpoint}), ` +
-    "one row per device and patch, each with deviceId. Paged: when hasMore is true, pass " +
-    "cursor back for the next page. organization_id limits rows to that organization; rows " +
+    "one row per device and patch, each with deviceId. Paged: while hasMore is true, pass " +
+    "cursor back for the next page; a device is only absent from the report once hasMore is " +
+    "false. organization_id limits rows to that organization; rows " +
     "are re-checked against the organization's device list, so count (rows kept) can be " +
     "lower than scanned (rows read). " +
     `With device_id: that device only (GET /v2/device/{id}/${report.endpoint}), unpaged; ` +
@@ -213,6 +214,25 @@ function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
+/** YYYY-MM-DD, optionally followed by a time with Z or a +hh:mm / -hh:mm offset. */
+const ISO_DATE = /^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/;
+
+/**
+ * Unix epoch seconds for a strict ISO-8601 date or date-time, else undefined.
+ * Date.parse alone accepts "0", "2026/09/22" or "Sept 22 2026" as local time
+ * and rolls 2026-02-30 over to March 2, so the format is checked first and
+ * the calendar date must survive a round trip.
+ */
+function epochSeconds(value: string): number | undefined {
+  const match = ISO_DATE.exec(value);
+  if (!match) return undefined;
+  const ms = Date.parse(value);
+  const day = Date.parse(match[1]);
+  if (Number.isNaN(ms) || Number.isNaN(day)) return undefined;
+  if (new Date(day).toISOString().slice(0, 10) !== match[1]) return undefined;
+  return Math.floor(ms / 1000);
+}
+
 /** Map this report's filter arguments onto NinjaOne query parameters. */
 function filterParams(
   report: PatchReport,
@@ -226,11 +246,15 @@ function filterParams(
       return { error: `${key} must be a non-empty string.` };
     }
     if (DATE_FILTERS.has(key)) {
-      const ms = Date.parse(value);
-      if (Number.isNaN(ms)) {
-        return { error: `${key} must be an ISO-8601 date or date-time, got "${value}".` };
+      const seconds = epochSeconds(value);
+      if (seconds === undefined) {
+        return {
+          error:
+            `${key} must be an ISO-8601 date (2026-09-22) or date-time with Z or an offset ` +
+            `(2026-09-22T08:00:00Z), got "${value}".`,
+        };
       }
-      params[UPSTREAM_PARAM[key]] = Math.floor(ms / 1000);
+      params[UPSTREAM_PARAM[key]] = seconds;
     } else {
       params[UPSTREAM_PARAM[key]] = value;
     }
@@ -246,6 +270,26 @@ function pageLimit(value: unknown): number {
 interface PatchQueryPage {
   cursor?: { name?: string };
   results?: Array<{ deviceId?: number }>;
+}
+
+/** The SDK returns `{}` for an empty body or a 204; that alone means "no rows". */
+function isEmptyBody(body: unknown): boolean {
+  return (
+    body === undefined ||
+    body === null ||
+    (typeof body === "object" && !Array.isArray(body) && Object.keys(body).length === 0)
+  );
+}
+
+/**
+ * Any other unexpected body is an error, never zero rows: an empty patch
+ * report reads as "fully patched".
+ */
+function unexpectedShape(path: string, expected: string): CallToolResult {
+  return errorResult(
+    `Unexpected response from GET ${path}: expected ${expected}. ` +
+      "This is not the same as no patches; report it instead of a count."
+  );
 }
 
 async function handleCall(
@@ -265,8 +309,8 @@ async function handleCall(
   if (orgId !== undefined && !isPositiveInteger(orgId)) {
     return errorResult("organization_id must be a positive integer.");
   }
-  if (cursor !== undefined && typeof cursor !== "string") {
-    return errorResult("cursor must be a string.");
+  if (cursor !== undefined && (typeof cursor !== "string" || cursor === "")) {
+    return errorResult("cursor must be a non-empty string.");
   }
 
   if (deviceId !== undefined) {
@@ -282,10 +326,11 @@ async function handleCall(
     const path = `/api/v2/device/${deviceId}/${report.endpoint}`;
     const client = await getClient();
     logger.info(`API call: ${logName}`, { path, params: Object.keys(filters.params) });
-    const patches = await sdkGet<unknown[]>(client, path, filters.params);
-    const count = Array.isArray(patches) ? patches.length : 0;
-    logger.debug(`API response: ${logName}`, { count });
-    return jsonResult({ deviceId, patches, count });
+    const body = await sdkGet<unknown>(client, path, filters.params);
+    const patches = isEmptyBody(body) ? [] : body;
+    if (!Array.isArray(patches)) return unexpectedShape(path, "an array of patches");
+    logger.debug(`API response: ${logName}`, { count: patches.length });
+    return jsonResult({ deviceId, patches, count: patches.length });
   }
 
   const limit = pageLimit(args.limit);
@@ -297,8 +342,10 @@ async function handleCall(
   const path = `/api/v2/queries/${report.endpoint}`;
   const client = await getClient();
   logger.info(`API call: ${logName}`, { path, params: Object.keys(params) });
-  const page = await sdkGet<PatchQueryPage | undefined>(client, path, params);
-  const raw = page?.results ?? [];
+  const body = await sdkGet<unknown>(client, path, params);
+  const page = (isEmptyBody(body) ? { results: [] } : body) as PatchQueryPage;
+  if (!Array.isArray(page.results)) return unexpectedShape(path, "{ cursor, results }");
+  const raw = page.results;
 
   let patches = raw;
   if (orgId !== undefined && raw.length > 0) {
@@ -306,8 +353,14 @@ async function handleCall(
     patches = raw.filter((row) => row.deviceId !== undefined && orgDevices.has(row.deviceId));
   }
 
-  const nextCursor = page?.cursor?.name;
-  const hasMore = raw.length === limit && typeof nextCursor === "string";
+  // Keep paging until a page comes back empty or without a cursor, not just
+  // until a short page: NinjaOne may cap pageSize below the requested limit,
+  // and its Cursor (name, offset, count, expires) is a server-side cursor
+  // whose name need not change between pages. The cost is at most one extra,
+  // empty page. hasMore is computed from the raw page, before the
+  // organization filter.
+  const nextCursor = page.cursor?.name;
+  const hasMore = raw.length > 0 && typeof nextCursor === "string" && nextCursor !== "";
   logger.debug(`API response: ${logName}`, {
     scanned: raw.length,
     matched: patches.length,

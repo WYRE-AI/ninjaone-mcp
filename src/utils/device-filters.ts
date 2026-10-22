@@ -183,8 +183,15 @@ export async function organizationDeviceIds(
     });
     for (const device of page) ids.add(device.id);
     const lastId = page[page.length - 1]?.id;
-    if (page.length < ORG_DEVICE_PAGE_SIZE || lastId === undefined || lastId === after) {
-      return ids;
+    if (page.length < ORG_DEVICE_PAGE_SIZE || lastId === undefined) return ids;
+    // A full page that does not move past `after` means the rest of the
+    // organization cannot be read. Filtering against a partial set would drop
+    // real rows, so fail instead.
+    if (lastId === after) {
+      throw new Error(
+        `GET /v2/organization/${orgId}/devices did not page past device ${after}, ` +
+          "so the organization's device list is incomplete."
+      );
     }
     after = lastId;
   }

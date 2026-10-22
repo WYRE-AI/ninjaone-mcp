@@ -290,21 +290,27 @@ Tools:
 > (`GET /v2/queries/os-patches`, `/software-patches`, `/os-patch-installs`,
 > `/software-patch-installs`). Rows carry `deviceId`, and the response is
 > `{ patches, count, scanned, hasMore, cursor }`; pass `cursor` back while
-> `hasMore` is true. With `device_id`, the tool reads that device's report
-> (`GET /v2/device/{id}/...`), which is not paged, and returns
-> `{ deviceId, patches, count }`. `device_id` cannot be combined with
+> `hasMore` is true. `hasMore` is true whenever a page has rows and NinjaOne
+> returned a cursor, even a short page (NinjaOne may cap `pageSize`), so the
+> last page can be followed by one empty page. With `device_id`, the tool
+> reads that device's report (`GET /v2/device/{id}/...`), which is not paged,
+> and returns `{ deviceId, patches, count }`. `device_id` cannot be combined with
 > `organization_id` or `cursor`.
 >
 > **Note:** `organization_id` is sent as `df=org=<id>`, but rows are also
 > checked against `GET /v2/organization/{id}/devices`, because `df=org` has
-> been silently ignored before (#60). `count` is the rows kept and `scanned`
-> is the rows read.
+> been silently ignored before
+> ([#60](https://github.com/WYRE-AI/ninjaone-mcp/issues/60)). `count` is the
+> rows kept and `scanned` is the rows read.
 >
-> **Note:** `installed_after` / `installed_before` take an ISO-8601 date or
-> date-time and are sent to NinjaOne as Unix epoch seconds. NinjaOne's spec
-> does not list values for `severity`, `impact`, `type` or the pending-report
-> `status`, so those are passed through as given; an unrecognised value can
-> return zero rows rather than an error.
+> **Note:** `installed_after` / `installed_before` take an ISO-8601 date
+> (`2026-09-22`, midnight UTC) or a date-time with `Z` or an offset
+> (`2026-09-22T08:00:00Z`), and are sent to NinjaOne as Unix epoch seconds.
+> Other formats are rejected. A response that is neither an empty body nor
+> the documented shape is returned as an error, not as zero patches.
+> NinjaOne's spec does not list values for `severity`, `impact`, `type` or the
+> pending-report `status`, so those are passed through as given; an
+> unrecognised value can return zero rows rather than an error.
 >
 > **Note:** Patch scan and apply (`POST /v2/device/{id}/patch/{os|software}/{scan|apply}`)
 > are deliberately not exposed. They change devices, need the `management`

@@ -82,6 +82,8 @@ describe("Patches Domain Handler", () => {
 
   describe("fleet-wide reports", () => {
     it("queries /v2/queries/os-patches with the filter and page size, without df", async () => {
+      mockHttpRequest.mockResolvedValue({ results: rows([1, 2]) });
+
       const result = await patchesHandler.handleCall("ninjaone_patches_os_list", {
         severity: "CRITICAL",
       });
@@ -126,6 +128,102 @@ describe("Patches Domain Handler", () => {
 
       expect(body.hasMore).toBe(false);
       expect(body.cursor).toBeUndefined();
+    });
+
+    it("reports hasMore on a short page with a cursor, in case NinjaOne capped pageSize", async () => {
+      mockHttpRequest.mockResolvedValue({ cursor: { name: "c2" }, results: rows([1, 2]) });
+
+      const body = parse(
+        await patchesHandler.handleCall("ninjaone_patches_os_list", { limit: 500 })
+      );
+
+      expect(body.hasMore).toBe(true);
+      expect(body.cursor).toBe("c2");
+    });
+
+    it("stops on an empty page even when NinjaOne still returns a cursor", async () => {
+      mockHttpRequest.mockResolvedValue({ cursor: { name: "c3" }, results: [] });
+
+      const body = parse(
+        await patchesHandler.handleCall("ninjaone_patches_os_list", { cursor: "c3" })
+      );
+
+      expect(body).toMatchObject({ patches: [], count: 0, scanned: 0, hasMore: false });
+      expect(body.cursor).toBeUndefined();
+    });
+
+    it("keeps hasMore when the organization filter drops every row of the page", async () => {
+      mockHttpRequest.mockResolvedValue({ cursor: { name: "c4" }, results: rows([8, 9]) });
+
+      const body = parse(
+        await patchesHandler.handleCall("ninjaone_patches_os_list", {
+          organization_id: 7,
+          limit: 2,
+        })
+      );
+
+      expect(body).toMatchObject({ patches: [], count: 0, scanned: 2, hasMore: true, cursor: "c4" });
+    });
+
+    it("treats an empty body ({}) as an empty page", async () => {
+      mockHttpRequest.mockResolvedValue({});
+
+      const result = await patchesHandler.handleCall("ninjaone_patches_os_list", {});
+
+      expect(result.isError).toBeUndefined();
+      expect(parse(result)).toMatchObject({ patches: [], count: 0, hasMore: false });
+    });
+
+    it.each([
+      [[{ deviceId: 1 }]],
+      [{ cursor: { name: "c1" }, items: [{ deviceId: 1 }] }],
+      [{ results: "none" }],
+      ["unexpected"],
+    ])("returns an error, not zero rows, for an unexpected body (%o)", async (response) => {
+      mockHttpRequest.mockResolvedValue(response);
+
+      const result = await patchesHandler.handleCall("ninjaone_patches_os_list", {});
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        "Unexpected response from GET /api/v2/queries/os-patches"
+      );
+    });
+
+    it.each([[""], [3]])("rejects cursor %o without calling NinjaOne", async (cursor) => {
+      const result = await patchesHandler.handleCall("ninjaone_patches_os_list", { cursor });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("cursor must be a non-empty string");
+      expect(mockHttpRequest).not.toHaveBeenCalled();
+    });
+
+    it("maps every software install filter on the fleet-wide report", async () => {
+      await patchesHandler.handleCall("ninjaone_patches_software_installs_list", {
+        status: "FAILED",
+        type: "PATCH",
+        impact: "CRITICAL",
+        product_identifier: "6f1c1e9c-0000-4000-8000-000000000001",
+        installed_after: "2026-09-22",
+        installed_before: "2026-10-22T08:00:00Z",
+        organization_id: 7,
+        cursor: "c5",
+        limit: 250,
+      });
+
+      expect(mockHttpRequest).toHaveBeenCalledWith("/api/v2/queries/software-patch-installs", {
+        params: {
+          status: "FAILED",
+          type: "PATCH",
+          impact: "CRITICAL",
+          productIdentifier: "6f1c1e9c-0000-4000-8000-000000000001",
+          installedAfter: 1790035200,
+          installedBefore: 1792656000,
+          pageSize: 250,
+          df: "org=7",
+          cursor: "c5",
+        },
+      });
     });
 
     it("clamps limit to 1-1000", async () => {
@@ -192,14 +290,14 @@ describe("Patches Domain Handler", () => {
       expect(ids.has(1001)).toBe(true);
     });
 
-    it("stops if NinjaOne returns the same full page again", async () => {
+    it("fails rather than return a partial set if a full page does not advance", async () => {
       const page = Array.from({ length: 1000 }, (_, i) => ({ id: i + 1 }));
       mockListByOrganization.mockResolvedValue(page);
 
-      const ids = await organizationDeviceIds(mockClient as never, 7);
-
+      await expect(organizationDeviceIds(mockClient as never, 7)).rejects.toThrow(
+        "did not page past device 1000"
+      );
       expect(mockListByOrganization).toHaveBeenCalledTimes(2);
-      expect(ids.size).toBe(1000);
     });
   });
 
@@ -220,6 +318,29 @@ describe("Patches Domain Handler", () => {
       expect(body.deviceId).toBe(42);
       expect(body.count).toBe(3);
       expect(body.patches).toHaveLength(3);
+    });
+
+    it("treats an empty body ({}) as no patches", async () => {
+      mockHttpRequest.mockResolvedValue({});
+
+      const body = parse(
+        await patchesHandler.handleCall("ninjaone_patches_os_list", { device_id: 42 })
+      );
+
+      expect(body).toEqual({ deviceId: 42, patches: [], count: 0 });
+    });
+
+    it("returns an error, not zero patches, for a non-array body", async () => {
+      mockHttpRequest.mockResolvedValue({ results: rows([42]) });
+
+      const result = await patchesHandler.handleCall("ninjaone_patches_os_list", {
+        device_id: 42,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        "Unexpected response from GET /api/v2/device/42/os-patches"
+      );
     });
 
     it.each([
@@ -274,14 +395,33 @@ describe("Patches Domain Handler", () => {
       });
     });
 
-    it("rejects an unparseable date without calling NinjaOne", async () => {
+    it.each([
+      "last tuesday",
+      "0",
+      "-1",
+      "2026/09/22",
+      "Sept 22 2026",
+      "2026-02-30",
+      "2026-09-22T10:00",
+      "2026-09-22T25:00Z",
+    ])("rejects %o as not a strict ISO-8601 date without calling NinjaOne", async (value) => {
       const result = await patchesHandler.handleCall("ninjaone_patches_os_installs_list", {
-        installed_after: "last tuesday",
+        installed_after: value,
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain("installed_after");
+      expect(result.content[0].text).toContain("installed_after must be an ISO-8601 date");
       expect(mockHttpRequest).not.toHaveBeenCalled();
+    });
+
+    it("honours an explicit offset on a date-time", async () => {
+      await patchesHandler.handleCall("ninjaone_patches_os_installs_list", {
+        installed_after: "2026-09-22T10:00:00+02:00",
+      });
+
+      expect(mockHttpRequest.mock.calls[0][1].params.installedAfter).toBe(
+        Date.UTC(2026, 8, 22, 8) / 1000
+      );
     });
 
     it("rejects a non-string filter value without calling NinjaOne", async () => {
