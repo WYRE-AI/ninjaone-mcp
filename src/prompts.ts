@@ -3,6 +3,15 @@
 
 import { Server } from "@modelcontextprotocol/server";
 
+/**
+ * The UTC calendar date `days` days ago, as YYYY-MM-DD. Prompts that need a
+ * date window get it from the server clock instead of asking the model to
+ * work out today's date.
+ */
+function isoDateDaysAgo(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 export function registerPromptHandlers(server: Server): void {
   server.setRequestHandler('prompts/list', async () => ({
     prompts: [
@@ -84,12 +93,17 @@ export function registerPromptHandlers(server: Server): void {
                 text: [
                   `Find devices with critical or important patches missing${args?.org_name ? ` in ${args.org_name}` : ' across all organizations'}. Use only these read-only NinjaOne tools:`,
                   '',
+                  'Paging applies to every step: for each ninjaone_patches_* call without device_id, and for',
+                  'ninjaone_organizations_devices and ninjaone_devices_list, keep calling with the returned cursor',
+                  'while hasMore is true. Do not count missing patches (step 2) or failures (steps 3 and 4), or',
+                  'conclude a device has no row (step 6), until hasMore is false.',
+                  '',
                   '1. Scope: if an organization is named, get its id from ninjaone_organizations_list and pass',
                   '   organization_id to every call below.',
-                  '2. Missing OS patches: ninjaone_patches_os_list with severity CRITICAL, then IMPORTANT. Page with',
-                  '   cursor while hasMore is true. If both return zero rows, run it once with no severity filter',
-                  '   before calling anything compliant, because a filter value NinjaOne does not recognise can',
-                  '   come back empty. Treat REJECTED rows as deliberately declined by policy and list them separately.',
+                  '2. Missing OS patches: ninjaone_patches_os_list with severity CRITICAL, then IMPORTANT. If both',
+                  '   return zero rows, run it once with no severity filter before calling anything compliant,',
+                  '   because a filter value NinjaOne does not recognise can come back empty. Treat REJECTED rows',
+                  '   as deliberately declined by policy and list them separately.',
                   '3. Failed OS installs: ninjaone_patches_os_installs_list with status FAILED.',
                   '4. Third-party software: ninjaone_patches_software_list with impact CRITICAL, and',
                   '   ninjaone_patches_software_installs_list with status FAILED.',
@@ -97,8 +111,8 @@ export function registerPromptHandlers(server: Server): void {
                   '   ninjaone_organizations_devices (or ninjaone_devices_list across all organizations).',
                   '   Use ninjaone_devices_get for individual devices only.',
                   '6. Stale patching: ninjaone_patches_os_installs_list with status INSTALLED and installed_after',
-                  "   set to 30 days ago. Report devices with no row as 'no successful OS patch install in 30 days',",
-                  '   and note this can also mean nothing was pending.',
+                  `   ${isoDateDaysAgo(30)} (30 days ago). Report devices with no row as 'no successful OS patch`,
+                  "   install in 30 days', and note this can also mean nothing was pending.",
                   '',
                   'Report only what the tools returned. If a tool errors or is unavailable, say so and do not',
                   'estimate counts.',

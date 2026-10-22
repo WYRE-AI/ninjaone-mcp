@@ -2,9 +2,13 @@
  * Prompts may only name tools this server actually serves. A prompt that
  * points the model at data no tool returns (patch-gaps did, before the
  * patches domain existed) gets invented answers back.
+ *
+ * The general check only catches a prompt that names a missing tool. A prompt
+ * that asks for data without naming any tool (the original patch-gaps text)
+ * passes it, so patch-gaps has its own test below.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import type { Server } from "@modelcontextprotocol/server";
 import { registerPromptHandlers } from "../prompts.js";
 import { getAvailableDomains, getDomainHandler } from "../domains/index.js";
@@ -54,13 +58,23 @@ async function renderAll(): Promise<Map<string, string>> {
 }
 
 describe("prompts", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("name only tools this server serves", async () => {
     const tools = await servedToolNames();
     const rendered = await renderAll();
 
+    // A trailing * (ninjaone_patches_*) must match at least one served tool.
+    const served = (name: string) =>
+      name.endsWith("*")
+        ? [...tools].some((tool) => tool.startsWith(name.slice(0, -1)))
+        : tools.has(name);
+
     expect(rendered.size).toBeGreaterThan(0);
     for (const [prompt, text] of rendered) {
-      const unknown = (text.match(/ninjaone_[a-z_]+/g) ?? []).filter((t) => !tools.has(t));
+      const unknown = (text.match(/ninjaone_[a-z_]+\*?/g) ?? []).filter((t) => !served(t));
       expect(unknown, `prompt ${prompt}`).toEqual([]);
     }
   });
@@ -74,5 +88,25 @@ describe("prompts", () => {
     expect(text).toContain("ninjaone_patches_software_list");
     expect(text).toContain("do not\nestimate counts");
     expect(rendered.get("patch-gaps (org)")).toContain("in Acme Corp");
+  });
+
+  it("make patch-gaps page every report before counting or calling a device stale", async () => {
+    const text = (await renderAll()).get("patch-gaps")!.replace(/\s+/g, " ");
+
+    expect(text).toContain(
+      "Paging applies to every step: for each ninjaone_patches_* call without device_id, and for " +
+        "ninjaone_organizations_devices and ninjaone_devices_list, keep calling with the returned " +
+        "cursor while hasMore is true. Do not count missing patches (step 2) or failures (steps 3 " +
+        "and 4), or conclude a device has no row (step 6), until hasMore is false."
+    );
+  });
+
+  it("give patch-gaps the 30-day window as a date from the server clock", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-22T13:05:00Z"));
+
+    const text = (await renderAll()).get("patch-gaps")!.replace(/\s+/g, " ");
+
+    expect(text).toContain("status INSTALLED and installed_after 2026-09-22 (30 days ago)");
   });
 });
