@@ -2,6 +2,21 @@
 
 ### Added
 
+- **Read-only `patches` domain.** Four tools over NinjaOne's patch reports, which
+  `@wyre-ai/node-ninjaone` does not implement. Each tool reads the fleet-wide
+  report, or one device's report when `device_id` is given:
+  `ninjaone_patches_os_list` (`GET /v2/queries/os-patches`,
+  `GET /v2/device/{id}/os-patches`), `ninjaone_patches_software_list`
+  (`GET /v2/queries/software-patches`, `GET /v2/device/{id}/software-patches`),
+  `ninjaone_patches_os_installs_list` (`GET /v2/queries/os-patch-installs`,
+  `GET /v2/device/{id}/os-patch-installs`) and
+  `ninjaone_patches_software_installs_list`
+  (`GET /v2/queries/software-patch-installs`,
+  `GET /v2/device/{id}/software-patch-installs`). Fleet-wide reports are paged
+  with `cursor`/`hasMore`. `organization_id` sends `df=org=<id>` and also checks
+  rows against the organization's device list. `installed_after` /
+  `installed_before` take ISO-8601 and are sent as Unix epoch seconds. The
+  `monitoring` scope is enough. Patch scan/apply are not exposed.
 - **Six ticketing discovery tools.** `ninjaone_tickets_forms_list` and
   `ninjaone_tickets_form_get` (`GET /api/v2/ticketing/ticket-form[/{id}]`),
   `ninjaone_tickets_statuses_list` (`GET /api/v2/ticketing/statuses`),

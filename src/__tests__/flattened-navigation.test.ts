@@ -114,7 +114,7 @@ describe("Flattened Navigation Architecture", () => {
   describe("Tool Collection for Flattened Architecture", () => {
     it("should collect all domain tools", async () => {
       const domains = getAvailableDomains();
-      expect(domains).toEqual(["devices", "organizations", "alerts", "tickets", "scripts"]);
+      expect(domains).toEqual(["devices", "organizations", "alerts", "tickets", "scripts", "patches"]);
 
       const allTools = [];
       for (const domain of domains) {

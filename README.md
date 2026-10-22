@@ -277,6 +277,39 @@ Tools:
 > (`LINUX_WORKSTATION`, `VMWARE_VM_HOST`, `NMS_SWITCH`, …) — `LINUX`,
 > `VMWARE_VM`, and `NMS` are not valid.
 
+### Patches
+Read-only patch reports: pending, failed and rejected patches, and patch install history.
+
+Tools:
+- `ninjaone_patches_os_list` - Pending, failed and rejected OS patches (filters: `status`, `type`, `severity`)
+- `ninjaone_patches_software_list` - Pending, failed and rejected third-party software patches (filters: `status`, `type`, `impact`, `product_identifier`)
+- `ninjaone_patches_os_installs_list` - OS patch install history (filters: `status` `FAILED`/`INSTALLED`, `installed_after`, `installed_before`)
+- `ninjaone_patches_software_installs_list` - Software patch install history (filters: `status`, `type`, `impact`, `product_identifier`, `installed_after`, `installed_before`)
+
+> **Note:** Without `device_id`, each tool reads NinjaOne's fleet-wide report
+> (`GET /v2/queries/os-patches`, `/software-patches`, `/os-patch-installs`,
+> `/software-patch-installs`). Rows carry `deviceId`, and the response is
+> `{ patches, count, scanned, hasMore, cursor }`; pass `cursor` back while
+> `hasMore` is true. With `device_id`, the tool reads that device's report
+> (`GET /v2/device/{id}/...`), which is not paged, and returns
+> `{ deviceId, patches, count }`. `device_id` cannot be combined with
+> `organization_id` or `cursor`.
+>
+> **Note:** `organization_id` is sent as `df=org=<id>`, but rows are also
+> checked against `GET /v2/organization/{id}/devices`, because `df=org` has
+> been silently ignored before (#60). `count` is the rows kept and `scanned`
+> is the rows read.
+>
+> **Note:** `installed_after` / `installed_before` take an ISO-8601 date or
+> date-time and are sent to NinjaOne as Unix epoch seconds. NinjaOne's spec
+> does not list values for `severity`, `impact`, `type` or the pending-report
+> `status`, so those are passed through as given; an unrecognised value can
+> return zero rows rather than an error.
+>
+> **Note:** Patch scan and apply (`POST /v2/device/{id}/patch/{os|software}/{scan|apply}`)
+> are deliberately not exposed. They change devices, need the `management`
+> scope and would need their own confirmation gate.
+
 ## Navigation Tools
 
 Always available:
@@ -322,7 +355,7 @@ need depends on what you use:
 
 | Scope | Needed for |
 |-------|-----------|
-| `monitoring` | All read operations — listing devices, organizations, alerts, and tickets |
+| `monitoring` | All read operations — listing devices, organizations, alerts, tickets, and patch reports |
 | `management` | Write operations — rebooting devices, resetting alerts, creating/updating tickets and organizations |
 | `control` | Not used by this server |
 
