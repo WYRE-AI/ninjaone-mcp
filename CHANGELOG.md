@@ -38,6 +38,13 @@
 
 ### Fixed
 
+- **The `patch-gaps` prompt asked for data no tool returned.** It told the model
+  to "filter for devices that have pending or failed critical/important
+  patches", but no tool exposed patch data, so the model could only invent the
+  answer. The prompt now names the `ninjaone_patches_*` tools step by step,
+  re-runs without a severity filter before calling anything compliant, and says
+  to report tool errors instead of estimating counts. A new test fails if any
+  prompt names a tool this server does not serve.
 - **Cloudflare Workers `/mcp` returned HTTP 500 on every request.** `bindServerRef`
   called `AsyncLocalStorage.enterWith()`, which workerd's `node:async_hooks`
   does not implement (`asyncLocalStorage.enterWith() is not implemented`).

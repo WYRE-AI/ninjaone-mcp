@@ -19,7 +19,7 @@ export function registerPromptHandlers(server: Server): void {
       },
       {
         name: 'patch-gaps',
-        description: 'Find devices with critical patches missing',
+        description: 'Find devices with critical/important OS or software patches missing or failing',
         arguments: [
           {
             name: 'org_name',
@@ -75,26 +75,39 @@ export function registerPromptHandlers(server: Server): void {
 
       case 'patch-gaps':
         return {
-          description: 'Find devices with critical patches missing',
+          description: 'Find devices with critical/important OS or software patches missing or failing',
           messages: [
             {
               role: 'user' as const,
               content: {
                 type: 'text' as const,
                 text: [
-                  `Find devices with critical patches missing${args?.org_name ? ` in ${args.org_name}` : ' across all organizations'}.`,
+                  `Find devices with critical or important patches missing${args?.org_name ? ` in ${args.org_name}` : ' across all organizations'}. Use only these read-only NinjaOne tools:`,
                   '',
-                  'Use the available NinjaOne tools to:',
-                  '1. Navigate to the devices domain and retrieve device list,',
-                  '2. Filter for devices that have pending or failed critical/important patches,',
-                  '3. For each device, note: device name, organization, OS, number of missing patches,',
-                  '   and the most critical patch(es) missing,',
-                  '4. Group by organization for multi-org views,',
-                  '5. Identify devices that have not had a successful patch run in 30+ days.',
+                  '1. Scope: if an organization is named, get its id from ninjaone_organizations_list and pass',
+                  '   organization_id to every call below.',
+                  '2. Missing OS patches: ninjaone_patches_os_list with severity CRITICAL, then IMPORTANT. Page with',
+                  '   cursor while hasMore is true. If both return zero rows, run it once with no severity filter',
+                  '   before calling anything compliant, because a filter value NinjaOne does not recognise can',
+                  '   come back empty. Treat REJECTED rows as deliberately declined by policy and list them separately.',
+                  '3. Failed OS installs: ninjaone_patches_os_installs_list with status FAILED.',
+                  '4. Third-party software: ninjaone_patches_software_list with impact CRITICAL, and',
+                  '   ninjaone_patches_software_installs_list with status FAILED.',
+                  '5. Device names and OS: patch rows carry only deviceId. Join them against',
+                  '   ninjaone_organizations_devices (or ninjaone_devices_list across all organizations).',
+                  '   Use ninjaone_devices_get for individual devices only.',
+                  '6. Stale patching: ninjaone_patches_os_installs_list with status INSTALLED and installed_after',
+                  "   set to 30 days ago. Report devices with no row as 'no successful OS patch install in 30 days',",
+                  '   and note this can also mean nothing was pending.',
+                  '',
+                  'Report only what the tools returned. If a tool errors or is unavailable, say so and do not',
+                  'estimate counts.',
                   '',
                   'Present as a patch compliance report:',
                   '- Summary: total devices checked, compliant count, non-compliant count',
-                  '- Table of non-compliant devices sorted by missing patch count (most critical first)',
+                  '- Table of non-compliant devices (device name, organization, OS, missing patch count, most',
+                  '  severe patches), sorted by severity, then missing patch count; group by organization for',
+                  '  multi-org views',
                   '- Recommendations for any devices that need immediate attention.',
                 ].join('\n'),
               },
