@@ -15,6 +15,7 @@
  * previous page". Compute it before client-side filtering so a page that
  * filters down to a few matches is not mistaken for the last page.
  */
+import type { NinjaOneClient } from "@wyre-ai/node-ninjaone";
 
 /**
  * Node classes from the NinjaOne public API device schema
@@ -156,4 +157,42 @@ export function devicePageResult<T extends FilterableDevice>(
     : undefined;
   const devices = rawDevices.filter(predicate);
   return { devices, count: devices.length, hasMore, cursor };
+}
+
+const ORG_DEVICE_PAGE_SIZE = 1000;
+
+/**
+ * Every device id in one organization, read from
+ * GET /v2/organization/{id}/devices (paged by `after`).
+ *
+ * Use this to verify organization scope on endpoints that only take a `df`
+ * device filter. `df=org=<id>` is unreliable: GET /v2/devices silently
+ * dropped it and returned the whole fleet (#60). The per-organization path
+ * cannot ignore the organization, so its ids are the source of truth.
+ */
+export async function organizationDeviceIds(
+  client: NinjaOneClient,
+  orgId: number
+): Promise<Set<number>> {
+  const ids = new Set<number>();
+  let after: number | undefined;
+  for (;;) {
+    const page = await client.devices.listByOrganization(orgId, {
+      pageSize: ORG_DEVICE_PAGE_SIZE,
+      after,
+    });
+    for (const device of page) ids.add(device.id);
+    const lastId = page[page.length - 1]?.id;
+    if (page.length < ORG_DEVICE_PAGE_SIZE || lastId === undefined) return ids;
+    // A full page that does not move past `after` means the rest of the
+    // organization cannot be read. Filtering against a partial set would drop
+    // real rows, so fail instead.
+    if (lastId === after) {
+      throw new Error(
+        `GET /v2/organization/${orgId}/devices did not page past device ${after}, ` +
+          "so the organization's device list is incomplete."
+      );
+    }
+    after = lastId;
+  }
 }
