@@ -21,6 +21,17 @@
   `PRODUCT`, `INFO`), so `type=COMMENT` returns just the conversation instead of
   the full activity feed.
 
+### Security
+
+- **Refresh the lockfile to clear every known advisory in the production
+  dependency graph.** `npm audit --omit=dev` now reports none (it reported 3
+  high-severity packages). Lockfile only, within the declared ranges: `@modelcontextprotocol/server`
+  2.3.1 (GHSA-jm63-cq47-j5jp, shared transport or server instances delivered
+  one HTTP client's messages to another; GHSA-46jr-4wx8-v453; GHSA-rvq5-wwqv-78pq),
+  `@modelcontextprotocol/core` 2.3.1 (one copy instead of two),
+  `@modelcontextprotocol/node` 2.1.1, `@hono/node-server` 1.19.17 and `hono`
+  4.13.13.
+
 ### Fixed
 
 - **Cloudflare Workers `/mcp` returned HTTP 500 on every request.** `bindServerRef`
