@@ -21,6 +21,7 @@ import {
   parseAllowedScriptIds,
   parseBooleanFlag,
   type CallToolResult,
+  type DomainName,
 } from "./utils/types.js";
 import {
   resolveHttpScriptCaller,
@@ -68,8 +69,6 @@ async function getAllDomainTools(): Promise<Tool[]> {
   return allTools;
 }
 
-type DomainName = "devices" | "organizations" | "alerts" | "tickets" | "scripts";
-
 const domainDescriptions: Record<DomainName, string> = {
   devices:
     "Device management - manage endpoints, reboot systems, view services, and get device alerts/activities",
@@ -81,6 +80,8 @@ const domainDescriptions: Record<DomainName, string> = {
     "Ticket management - create, update, comment on, and track service tickets",
   scripts:
     "Scripting - list and run org-approved scripts/actions on a device (ninjaone_scripts_run is destructive and requires org pre-approval)",
+  patches:
+    "Patch management (read-only) - pending/failed/rejected OS and third-party software patches and patch install history, fleet-wide or per device",
 };
 
 const navigateTool: Tool = {
@@ -98,7 +99,8 @@ const navigateTool: Tool = {
 - organizations: ${domainDescriptions.organizations}
 - alerts: ${domainDescriptions.alerts}
 - tickets: ${domainDescriptions.tickets}
-- scripts: ${domainDescriptions.scripts}`,
+- scripts: ${domainDescriptions.scripts}
+- patches: ${domainDescriptions.patches}`,
       },
     },
     required: ["domain"],
@@ -483,6 +485,10 @@ export async function createMcpServer(
         }
         if (name.startsWith("ninjaone_scripts_")) {
           const handler = await getDomainHandler("scripts");
+          return await handler.handleCall(name, toolArgs);
+        }
+        if (name.startsWith("ninjaone_patches_")) {
+          const handler = await getDomainHandler("patches");
           return await handler.handleCall(name, toolArgs);
         }
 

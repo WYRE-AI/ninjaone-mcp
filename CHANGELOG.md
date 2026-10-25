@@ -2,6 +2,23 @@
 
 ### Added
 
+- **Read-only `patches` domain.** Four tools over NinjaOne's patch reports, which
+  `@wyre-ai/node-ninjaone` does not implement. Each tool reads the fleet-wide
+  report, or one device's report when `device_id` is given:
+  `ninjaone_patches_os_list` (`GET /v2/queries/os-patches`,
+  `GET /v2/device/{id}/os-patches`), `ninjaone_patches_software_list`
+  (`GET /v2/queries/software-patches`, `GET /v2/device/{id}/software-patches`),
+  `ninjaone_patches_os_installs_list` (`GET /v2/queries/os-patch-installs`,
+  `GET /v2/device/{id}/os-patch-installs`) and
+  `ninjaone_patches_software_installs_list`
+  (`GET /v2/queries/software-patch-installs`,
+  `GET /v2/device/{id}/software-patch-installs`). Fleet-wide reports are paged
+  with `cursor`/`hasMore`. `organization_id` sends `df=org=<id>` and also checks
+  rows against the organization's device list. `installed_after` /
+  `installed_before` take a strict ISO-8601 date or date-time and are sent as
+  Unix epoch seconds. A response in an unexpected shape is returned as an
+  error rather than as zero patches. The `monitoring` scope is enough. Patch
+  scan/apply are not exposed.
 - **Six ticketing discovery tools.** `ninjaone_tickets_forms_list` and
   `ninjaone_tickets_form_get` (`GET /api/v2/ticketing/ticket-form[/{id}]`),
   `ninjaone_tickets_statuses_list` (`GET /api/v2/ticketing/statuses`),
@@ -34,6 +51,15 @@
 
 ### Fixed
 
+- **The `patch-gaps` prompt asked for data no tool returned.** It told the model
+  to "filter for devices that have pending or failed critical/important
+  patches", but no tool exposed patch data, so the model could only invent the
+  answer. The prompt now names the `ninjaone_patches_*` tools step by step,
+  tells the model to follow `cursor` until `hasMore` is false before counting
+  or calling a device stale, gives the 30-day window as a date from the server
+  clock, re-runs without a severity filter before calling anything compliant,
+  and says to report tool errors instead of estimating counts. A new test fails
+  if any prompt names a tool this server does not serve.
 - **Cloudflare Workers `/mcp` returned HTTP 500 on every request.** `bindServerRef`
   called `AsyncLocalStorage.enterWith()`, which workerd's `node:async_hooks`
   does not implement (`asyncLocalStorage.enterWith() is not implemented`).
