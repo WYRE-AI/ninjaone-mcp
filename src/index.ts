@@ -49,6 +49,11 @@ import {
 import { preflightAuthCheck } from "./utils/client.js";
 import { logger } from "./utils/logger.js";
 import { verifyS2sHeader, S2S_HEADER } from "./s2s-verify.js";
+import {
+  createEntraTokenValidator,
+  getEntraAuthConfig,
+  getProtectedResourceMetadata,
+} from "./entra-auth.js";
 
 /**
  * Public example values. A copied placeholder must not verify as a real
@@ -156,9 +161,25 @@ function startStdioTransport(): void {
  * exactly like the previous per-request Server + Transport wiring.
  */
 export async function startHttpTransport(): Promise<HttpServer> {
-  const s2sSecret = resolveHttpS2sSecret();
+  const mcpAuthMode = (process.env.MCP_AUTH_MODE || "s2s").trim().toLowerCase();
+  const isEntraAuth = mcpAuthMode === "entra";
+
+  if (mcpAuthMode !== "s2s" && mcpAuthMode !== "entra") {
+    throw new Error(
+      `Unsupported MCP_AUTH_MODE=${mcpAuthMode}. Expected "s2s" or "entra".`
+    );
+  }
+
+  const s2sSecret = isEntraAuth ? "" : resolveHttpS2sSecret();
+  const entraConfig = isEntraAuth ? getEntraAuthConfig() : undefined;
+  const validateEntraToken = entraConfig
+    ? createEntraTokenValidator(entraConfig)
+    : undefined;
+
   const port = parseInt(process.env.MCP_HTTP_PORT || "8080", 10);
-  const host = resolveListenHost(s2sSecret);
+  const host = isEntraAuth
+    ? (process.env.MCP_HTTP_HOST || "0.0.0.0").trim()
+    : resolveListenHost(s2sSecret);
   const isGatewayMode = process.env.AUTH_MODE === "gateway";
 
   // A scope mismatch (or any other OAuth-level rejection) is otherwise silent
@@ -223,6 +244,17 @@ export async function startHttpTransport(): Promise<HttpServer> {
       return;
     }
 
+    // OAuth 2.0 Protected Resource Metadata for MCP clients.
+    if (
+      isEntraAuth &&
+      entraConfig &&
+      url.pathname === "/.well-known/oauth-protected-resource"
+    ) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(getProtectedResourceMetadata(entraConfig)));
+      return;
+    }
+
     // MCP endpoint
     if (url.pathname === "/mcp") {
       // Conduit service-to-service auth (gateway#377 parity): rejected
@@ -238,6 +270,25 @@ export async function startHttpTransport(): Promise<HttpServer> {
           })
         );
         return;
+      }
+
+      if (isEntraAuth && validateEntraToken) {
+        const authResult = await validateEntraToken(
+          headerValue(req.headers.authorization)
+        );
+
+        if (!authResult.authenticated) {
+          res.writeHead(authResult.status, {
+            "Content-Type": "application/json",
+            "WWW-Authenticate": `Bearer resource_metadata="${entraConfig?.protectedResource.replace(/\/$/, "")}/.well-known/oauth-protected-resource"`,
+          });
+          res.end(
+            JSON.stringify({
+              error: authResult.error,
+            })
+          );
+          return;
+        }
       }
 
       if (isGatewayMode) {
