@@ -13,7 +13,7 @@
  * 1. Gateway headers (when AUTH_MODE=gateway) — identity only:
  *    - X-Ninja-Client-ID
  *    - X-Ninja-Client-Secret
- *    - X-Ninja-Region (optional; us, eu, oc, ca, us2, fed)
+ *    - X-Ninja-Region (optional; us, eu, oc, ca, us2, fed, jp)
  *    - X-Ninja-Scopes (optional)
  * 2. Worker secrets / vars, in both modes, for script policy. This Worker
  *    is a public endpoint, so X-Ninja-Allowed-Script-Ids and

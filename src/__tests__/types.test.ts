@@ -36,6 +36,7 @@ describe("Type Utilities", () => {
       expect(isValidRegion("ca")).toBe(true);
       expect(isValidRegion("us2")).toBe(true);
       expect(isValidRegion("fed")).toBe(true);
+      expect(isValidRegion("jp")).toBe(true);
     });
 
     it("should return false for invalid regions", () => {
@@ -69,6 +70,10 @@ describe("Type Utilities", () => {
 
     it("should return correct URL for FED region", () => {
       expect(getBaseUrlForRegion("fed")).toBe("https://fed.ninjarmm.com");
+    });
+
+    it("should return correct URL for JP region", () => {
+      expect(getBaseUrlForRegion("jp")).toBe("https://jp.ninjarmm.com");
     });
   });
 

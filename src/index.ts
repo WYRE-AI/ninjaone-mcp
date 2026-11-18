@@ -20,7 +20,7 @@
  * Credentials are provided via environment variables:
  * - NINJAONE_CLIENT_ID
  * - NINJAONE_CLIENT_SECRET
- * - NINJAONE_REGION (us, eu, oc, ca, us2, fed)
+ * - NINJAONE_REGION (us, eu, oc, ca, us2, fed, jp)
  *
  * Or via gateway headers (when AUTH_MODE=gateway):
  * - X-Ninja-Client-ID
