@@ -34,6 +34,8 @@
 
 ### Fixed
 
+- **Accept the Japan (`jp`) NinjaOne instance.** `NINJAONE_REGION` / `X-Ninja-Region` now recognize `jp` (`https://jp.ninjarmm.com`) alongside `us`, `us2`, `eu`, `oc`, `ca`, and `fed`. The client is still constructed with an explicit `baseUrl`, so this does not depend on a new `@wyre-ai/node-ninjaone` release.
+
 - **Cloudflare Workers `/mcp` returned HTTP 500 on every request.** `bindServerRef`
   called `AsyncLocalStorage.enterWith()`, which workerd's `node:async_hooks`
   does not implement (`asyncLocalStorage.enterWith() is not implemented`).

@@ -77,7 +77,7 @@ Copy [`.env.example`](.env.example) and set the variables below.
 |----------|----------|-------------|
 | `NINJAONE_CLIENT_ID` | For stdio and `AUTH_MODE=env` | OAuth 2.0 Client ID |
 | `NINJAONE_CLIENT_SECRET` | For stdio and `AUTH_MODE=env` | OAuth 2.0 Client Secret |
-| `NINJAONE_REGION` | No | Region: `us` (default), `eu`, `oc`, `ca`, `us2`, or `fed` |
+| `NINJAONE_REGION` | No | Region: `us` (default), `eu`, `oc`, `ca`, `us2`, `fed`, or `jp` |
 | `NINJAONE_SCOPES` | No | OAuth scopes to request. Defaults to `monitoring,management`. Set this if your API app is granted a narrower set — see [OAuth scopes](#oauth-scopes) |
 | `MCP_TRANSPORT` | No | `stdio` (default) or `http` |
 | `AUTH_MODE` | No | `gateway` (Docker image and Compose default) or `env`. Gateway mode requires `X-Ninja-Client-ID` and `X-Ninja-Client-Secret` on each `/mcp` request and never falls back to `NINJAONE_*`. `env` uses those variables only after S2S auth succeeds. |
@@ -112,6 +112,7 @@ In `AUTH_MODE=gateway`, `/mcp` also requires `X-Ninja-Client-ID` and `X-Ninja-Cl
 | `ca` | `https://ca.ninjarmm.com` |
 | `us2` | `https://us2.ninjarmm.com` |
 | `fed` | `https://fed.ninjarmm.com` |
+| `jp` | `https://jp.ninjarmm.com` |
 
 ## Usage
 
