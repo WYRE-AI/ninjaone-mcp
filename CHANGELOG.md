@@ -34,6 +34,12 @@
 
 ### Fixed
 
+- **The HTTP transport no longer exits on a malformed request (WYREAI-741).** The request
+  target was parsed against the client-supplied `Host` header, and a value that does not parse
+  (or a target such as `//`) threw inside the request listener before authentication. The
+  target is now parsed against a fixed base, so `Host` is no longer consulted, and a target
+  that still cannot be parsed gets a `400` JSON response while the server keeps running.
+
 - **Accept the Japan (`jp`) NinjaOne instance.** `NINJAONE_REGION` / `X-Ninja-Region` now recognize `jp` (`https://jp.ninjarmm.com`) alongside `us`, `us2`, `eu`, `oc`, `ca`, and `fed`. The client is still constructed with an explicit `baseUrl`, so this does not depend on a new `@wyre-ai/node-ninjaone` release.
 
 - **Cloudflare Workers `/mcp` returned HTTP 500 on every request.** `bindServerRef`
