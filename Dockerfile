@@ -43,6 +43,9 @@ COPY --from=builder /app/node_modules ./node_modules
 # Prune dev dependencies (avoids re-installing git deps which need build tools)
 RUN npm prune --omit=dev && npm cache clean --force
 
+# Remove the npm CLI bundled in the base image; the runtime only needs node
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 # Create logs directory
 RUN mkdir -p /app/logs && chown -R ninjaone:ninjaone /app
 
